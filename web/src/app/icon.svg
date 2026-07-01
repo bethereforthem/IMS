@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Shield body -->
+  <path d="M16 2L4 7v8c0 7.4 5.1 14.3 12 16 6.9-1.7 12-8.6 12-16V7L16 2z" fill="#052e16"/>
+  <path d="M16 2L4 7v8c0 7.4 5.1 14.3 12 16 6.9-1.7 12-8.6 12-16V7L16 2z" fill="url(#sg)" opacity="0.9"/>
+  <!-- Shield border -->
+  <path d="M16 2L4 7v8c0 7.4 5.1 14.3 12 16 6.9-1.7 12-8.6 12-16V7L16 2z" stroke="#22c55e" stroke-width="1.2" fill="none"/>
+  <!-- Inner shield highlight -->
+  <path d="M16 5L7 9.2V15c0 5.4 3.7 10.4 9 11.8 5.3-1.4 9-6.4 9-11.8V9.2L16 5z" fill="#0f3a1f" opacity="0.6"/>
+  <!-- IMS text -->
+  <text x="16" y="20" text-anchor="middle" font-family="Arial Black,Impact,sans-serif" font-weight="900" font-size="9" fill="#22c55e" letter-spacing="-0.5">IMS</text>
+  <!-- Top glow line -->
+  <path d="M10 9.5 L16 7 L22 9.5" stroke="#4ade80" stroke-width="0.8" stroke-linecap="round" opacity="0.6"/>
+  <!-- Gradient def -->
+  <defs>
+    <linearGradient id="sg" x1="16" y1="2" x2="16" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#166534"/>
+      <stop offset="100%" stop-color="#052e16"/>
+    </linearGradient>
+  </defs>
+</svg>
