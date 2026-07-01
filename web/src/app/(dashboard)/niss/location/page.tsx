@@ -138,7 +138,7 @@ export default function NISSLocationPage() {
         {/* Map */}
         <div
           className="lg:col-span-3 rounded-xl overflow-hidden border border-slate-800"
-          style={{ height: 500 }}
+          style={{ height: 560 }}
         >
           <LocationMap
             locations={locations}
