@@ -100,30 +100,48 @@ export default function LocationMap({ locations, agents = [], onDirectAgent }: P
       }
 
       const map = L.map(divRef.current, {
-        center:      [-1.9403, 29.8739],
-        zoom:         9,
-        zoomControl:  true,
-        preferCanvas: true,
+        center:     [-1.9403, 29.8739],
+        zoom:        9,
+        zoomControl: true,
       })
       mapRef.current = map
 
       // ── Base layers (user selects one) ────────────────────────────────────
+      // Google tiles — high-res, no API key required for non-commercial use
+      const googleSat = L.tileLayer(
+        'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+        {
+          subdomains:  ['0', '1', '2', '3'],
+          attribution: '&copy; Google',
+          maxZoom:     20,
+          maxNativeZoom: 20,
+        }
+      )
+      // Hybrid = satellite imagery + road/label overlay
+      const googleHybrid = L.tileLayer(
+        'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        {
+          subdomains:  ['0', '1', '2', '3'],
+          attribution: '&copy; Google',
+          maxZoom:     20,
+          maxNativeZoom: 20,
+        }
+      )
+
       const baseLayers: Record<string, L.TileLayer> = {
         '🌑 Dark (Tactical)': L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          { attribution: '&copy; CARTO', maxZoom: 19 }
+          { attribution: '&copy; CARTO', maxZoom: 20 }
         ),
-        '🛰️ Satellite': L.tileLayer(
-          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          { attribution: '&copy; Esri &mdash; Esri, DigitalGlobe, GeoEye, i-cubed', maxZoom: 19 }
-        ),
+        '🛰️ Satellite': googleSat,
+        '🛰️ Satellite + Labels': googleHybrid,
         '🗺️ Streets (OSM)': L.tileLayer(
           'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          { attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>', maxZoom: 19 }
+          { attribution: '&copy; OpenStreetMap', maxZoom: 19 }
         ),
         '☀️ Light': L.tileLayer(
           'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-          { attribution: '&copy; CARTO', maxZoom: 19 }
+          { attribution: '&copy; CARTO', maxZoom: 20 }
         ),
         '⛰️ Terrain': L.tileLayer(
           'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
