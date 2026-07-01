@@ -1,0 +1,10 @@
+insightface==0.7.3
+opencv-python==4.10.0.84
+numpy==2.0.0
+httpx[http2]==0.28.1
+easyocr==1.7.2
+Pillow==11.0.0
+python-dotenv==1.0.1
+structlog==24.4.0
+RPi.GPIO==0.7.1; platform_machine == "aarch64"
+picamera2==0.3.23; platform_machine == "aarch64"
