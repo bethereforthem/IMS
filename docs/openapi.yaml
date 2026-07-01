@@ -1,0 +1,2226 @@
+openapi: 3.0.3
+
+info:
+  title: IMS v3.0 — Rwanda Intelligence Management System API
+  description: |
+    Multi-institution law enforcement intelligence API.
+
+    **Classification: RESTRICTED — Authorized Personnel Only.**
+
+    All requests require Bearer JWT authentication **except** `/auth/login` and `/auth/verify-otp`.
+    Role-based access control (RBAC) and Row-Level Security (RLS) are enforced on every endpoint.
+
+    ## Auth Flow
+    1. `POST /auth/login` — submit badge number + password → receive `session_token` + OTP sent to registered email
+    2. `POST /auth/verify-otp` — submit `session_token` + 6-digit OTP → receive `access_token` + `refresh_token`
+    3. Include `Authorization: Bearer <access_token>` on all subsequent requests
+    4. Use `POST /auth/refresh` to rotate tokens before expiry
+
+    ## Roles
+    | Role | Institution | Access Level |
+    |------|-------------|--------------|
+    | NISS_DIRECTOR | NISS | Full system access |
+    | NISS_ANALYST | NISS | Read/write intelligence |
+    | SIEM_ANALYST | NISS | SIEM events only |
+    | RNP_COMMANDER | RNP | RNP-scoped + suspects |
+    | RNP_OFFICER | RNP | RNP-scoped read |
+    | RIB_DIRECTOR | RIB | RIB-scoped |
+    | RIB_INVESTIGATOR | RIB | RIB-scoped |
+    | RDF_COMMANDER | RDF | RDF-scoped |
+    | RCS_DIRECTOR | RCS | RCS-scoped |
+    | IRONDO_PATROL | IRONDO | Patrol-only read |
+    | DASSO_OFFICER | DASSO | Patrol-only read |
+    | SYSTEM_ADMIN | SYSTEM | Infrastructure management |
+
+  version: 3.0.0
+  contact:
+    name: IMS System Administration
+    email: systemims35@gmail.com
+  license:
+    name: Government of Rwanda — Restricted Use
+
+servers:
+  - url: /api/v1
+    description: Production API (Next.js API Routes)
+  - url: http://localhost:3000/api/v1
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Authentication
+    description: Credential verification and token lifecycle
+  - name: Suspects
+    description: Suspect profiles, warrants, and cross-institution search
+  - name: Cases
+    description: Investigation case management
+  - name: Intelligence
+    description: Intelligence events from field agents, DIV app, and edge nodes
+  - name: Alerts
+    description: System and intelligence alerts (institution-scoped)
+  - name: Infrastructure
+    description: Camera nodes and edge device management
+  - name: Location
+    description: Suspect movement and geolocation records (clearance-gated)
+  - name: Corrections
+    description: Corrections and detention records
+  - name: SIEM
+    description: Security Information and Event Management (NISS/SIEM_ANALYST only)
+  - name: Administration
+    description: Emergency controls and access management
+  - name: Partners
+    description: International law enforcement partner directory
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Components
+# ─────────────────────────────────────────────────────────────────────────────
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/verify-otp
+
+  schemas:
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    LoginRequest:
+      type: object
+      required: [badge_number, password]
+      properties:
+        badge_number:
+          type: string
+          example: NISS-DIR-001
+          description: Officer badge number (case-insensitive, normalised to upper-case server-side)
+        password:
+          type: string
+          format: password
+          example: "s3cureP@ss!"
+
+    OtpStepResponse:
+      type: object
+      properties:
+        session_token:
+          type: string
+          description: Opaque short-lived token to exchange with the OTP in step 2
+          example: "sess_abc123xyz"
+        message:
+          type: string
+          example: "OTP sent to your registered email address"
+        user_name:
+          type: string
+          description: Officer display name — for greeting on the OTP screen
+          example: "Jean-Pierre Habimana"
+
+    VerifyOtpRequest:
+      type: object
+      required: [session_token, otp]
+      properties:
+        session_token:
+          type: string
+          example: "sess_abc123xyz"
+        otp:
+          type: string
+          pattern: '^\d{6}$'
+          example: "482913"
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Short-lived JWT (15 min)
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refresh_token:
+          type: string
+          description: Long-lived refresh token (7 days)
+          example: "rt_7d_..."
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          description: Access token TTL in seconds
+          example: 900
+
+    AuthUser:
+      type: object
+      description: JWT payload fields
+      properties:
+        sub:
+          type: string
+          format: uuid
+          description: Supabase user UUID
+        badge_number:
+          type: string
+          example: NISS-DIR-001
+        full_name:
+          type: string
+          example: "Jean-Pierre Habimana"
+        role:
+          $ref: '#/components/schemas/UserRole'
+        institution:
+          $ref: '#/components/schemas/Institution'
+        clearance_level:
+          $ref: '#/components/schemas/ClearanceLevel'
+        exp:
+          type: integer
+          description: Unix expiry timestamp
+
+    UserRole:
+      type: string
+      enum:
+        - NISS_DIRECTOR
+        - NISS_ANALYST
+        - SIEM_ANALYST
+        - RNP_COMMANDER
+        - RNP_OFFICER
+        - RIB_DIRECTOR
+        - RIB_INVESTIGATOR
+        - RDF_COMMANDER
+        - RCS_DIRECTOR
+        - IRONDO_PATROL
+        - DASSO_OFFICER
+        - SYSTEM_ADMIN
+
+    Institution:
+      type: string
+      enum: [NISS, RNP, RIB, RDF, RCS, IRONDO, DASSO, SYSTEM]
+
+    ClearanceLevel:
+      type: string
+      enum: [PUBLIC, CONFIDENTIAL, SECRET, TOP_SECRET]
+
+    # ── Suspects ──────────────────────────────────────────────────────────────
+
+    Suspect:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          example: "John Mugabo"
+        alias:
+          type: array
+          items:
+            type: string
+          example: ["Shadow", "JM"]
+        date_of_birth:
+          type: string
+          format: date
+          example: "1985-03-22"
+        nationality:
+          type: string
+          example: "Rwandan"
+        national_id:
+          type: string
+          example: "1198500123456789"
+        status:
+          type: string
+          enum: [ACTIVE, WANTED, DETAINED, RELEASED, DECEASED]
+        clearance_level:
+          $ref: '#/components/schemas/ClearanceLevel'
+        institution_of_record:
+          $ref: '#/components/schemas/Institution'
+        threat_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        photo_url:
+          type: string
+          format: uri
+          nullable: true
+        last_known_location:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SuspectCreate:
+      type: object
+      required: [full_name, status, clearance_level, threat_level]
+      properties:
+        full_name:
+          type: string
+        alias:
+          type: array
+          items:
+            type: string
+        date_of_birth:
+          type: string
+          format: date
+        nationality:
+          type: string
+        national_id:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, WANTED, DETAINED, RELEASED, DECEASED]
+        clearance_level:
+          $ref: '#/components/schemas/ClearanceLevel'
+        threat_level:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        notes:
+          type: string
+
+    Warrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        suspect_id:
+          type: string
+          format: uuid
+        issued_by:
+          type: string
+          format: uuid
+          description: Officer UUID
+        issuing_institution:
+          $ref: '#/components/schemas/Institution'
+        warrant_type:
+          type: string
+          enum: [ARREST, SEARCH, DETENTION, EXTRADITION]
+        status:
+          type: string
+          enum: [ACTIVE, EXECUTED, CANCELLED, EXPIRED]
+        reason:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    WarrantCreate:
+      type: object
+      required: [warrant_type, reason]
+      properties:
+        warrant_type:
+          type: string
+          enum: [ARREST, SEARCH, DETENTION, EXTRADITION]
+        reason:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ── Cases ─────────────────────────────────────────────────────────────────
+
+    Case:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_number:
+          type: string
+          example: "RIB-2025-0042"
+        title:
+          type: string
+          example: "Operation Sunrise"
+        description:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, CLOSED, SUSPENDED, REFERRED]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        lead_officer_id:
+          type: string
+          format: uuid
+        institution:
+          $ref: '#/components/schemas/Institution'
+        clearance_level:
+          $ref: '#/components/schemas/ClearanceLevel'
+        suspects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Suspect'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CaseCreate:
+      type: object
+      required: [title, status, priority, clearance_level]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, CLOSED, SUSPENDED, REFERRED]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        clearance_level:
+          $ref: '#/components/schemas/ClearanceLevel'
+
+    # ── Intelligence ──────────────────────────────────────────────────────────
+
+    IntelligenceEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_tag:
+          type: string
+          description: Source system identifier
+          example: "DIV-APP-KGL-01"
+        officer_id:
+          type: string
+          format: uuid
+          nullable: true
+        suspect_id:
+          type: string
+          format: uuid
+          nullable: true
+        description:
+          type: string
+        criminal_record_found:
+          type: boolean
+        severity:
+          type: string
+          enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+        institution:
+          $ref: '#/components/schemas/Institution'
+        location_lat:
+          type: number
+          format: double
+          nullable: true
+        location_lng:
+          type: number
+          format: double
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    IntelligenceEventCreate:
+      type: object
+      required: [source_tag, description, severity]
+      properties:
+        source_tag:
+          type: string
+        officer_id:
+          type: string
+          format: uuid
+          nullable: true
+        suspect_id:
+          type: string
+          format: uuid
+          nullable: true
+        description:
+          type: string
+        criminal_record_found:
+          type: boolean
+          default: false
+        severity:
+          type: string
+          enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+        location_lat:
+          type: number
+          format: double
+          nullable: true
+        location_lng:
+          type: number
+          format: double
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+
+    # ── Alerts ────────────────────────────────────────────────────────────────
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "New WANTED suspect added"
+        body:
+          type: string
+        severity:
+          type: string
+          enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+        is_read:
+          type: boolean
+          default: false
+        requires_action:
+          type: boolean
+          default: false
+        source_event_id:
+          type: string
+          format: uuid
+          nullable: true
+        institution:
+          $ref: '#/components/schemas/Institution'
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Infrastructure / Camera Nodes ─────────────────────────────────────────
+
+    CameraNode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+          example: "CAM-KGL-CBD-001"
+        name:
+          type: string
+          example: "Kigali CBD North Gate"
+        location_description:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [ONLINE, OFFLINE, DEGRADED, MAINTENANCE]
+        last_heartbeat:
+          type: string
+          format: date-time
+          nullable: true
+        institution:
+          $ref: '#/components/schemas/Institution'
+        firmware_version:
+          type: string
+          nullable: true
+
+    CameraNodeCreate:
+      type: object
+      required: [node_id, name, latitude, longitude]
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        location_description:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    # ── Location ──────────────────────────────────────────────────────────────
+
+    LocationRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        suspect_id:
+          type: string
+          format: uuid
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        accuracy_meters:
+          type: number
+          format: float
+          nullable: true
+        source:
+          type: string
+          enum: [CAMERA, PATROL, MANUAL, CELLID, CHECKPOINT]
+        camera_node_id:
+          type: string
+          format: uuid
+          nullable: true
+        recorded_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: uuid
+
+    # ── Corrections ───────────────────────────────────────────────────────────
+
+    CorrectionsRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        suspect_id:
+          type: string
+          format: uuid
+        facility_name:
+          type: string
+          example: "Kimironko Detention Centre"
+        cell_reference:
+          type: string
+          nullable: true
+        detention_start:
+          type: string
+          format: date-time
+        detention_end:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [DETAINED, RELEASED, TRANSFERRED, ESCAPED]
+        notes:
+          type: string
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CorrectionsCreate:
+      type: object
+      required: [suspect_id, facility_name, detention_start, status]
+      properties:
+        suspect_id:
+          type: string
+          format: uuid
+        facility_name:
+          type: string
+        cell_reference:
+          type: string
+          nullable: true
+        detention_start:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [DETAINED, RELEASED, TRANSFERRED, ESCAPED]
+        notes:
+          type: string
+          nullable: true
+
+    # ── SIEM ──────────────────────────────────────────────────────────────────
+
+    SiemEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          enum:
+            - AUTH_FAILURE
+            - PRIVILEGE_ESCALATION
+            - UNUSUAL_ACCESS
+            - DATA_EXPORT
+            - LOCKDOWN_TRIGGERED
+            - REVOCATION
+            - POLICY_VIOLATION
+        severity:
+          type: string
+          enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        target_id:
+          type: string
+          format: uuid
+          nullable: true
+        description:
+          type: string
+        is_reviewed:
+          type: boolean
+          default: false
+        reviewed_by:
+          type: string
+          format: uuid
+          nullable: true
+        review_notes:
+          type: string
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    SiemReviewRequest:
+      type: object
+      required: [notes]
+      properties:
+        notes:
+          type: string
+          example: "Verified false positive — officer was rotating credentials"
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+
+    DashboardStats:
+      type: object
+      properties:
+        total_suspects:
+          type: integer
+          example: 1247
+        wanted_suspects:
+          type: integer
+          example: 84
+        active_cases:
+          type: integer
+          example: 31
+        intelligence_events_today:
+          type: integer
+          example: 12
+        unread_alerts:
+          type: integer
+          example: 5
+        cameras_online:
+          type: integer
+          example: 142
+        cameras_offline:
+          type: integer
+          example: 3
+        institution:
+          $ref: '#/components/schemas/Institution'
+
+    # ── Audit ─────────────────────────────────────────────────────────────────
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+          format: uuid
+        actor_badge:
+          type: string
+        action:
+          type: string
+          example: "SUSPECT_VIEWED"
+        resource_type:
+          type: string
+          example: "suspect"
+        resource_id:
+          type: string
+          format: uuid
+          nullable: true
+        justification:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        institution:
+          $ref: '#/components/schemas/Institution'
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Partners ──────────────────────────────────────────────────────────────
+
+    Partner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "INTERPOL Rwanda NCB"
+        country:
+          type: string
+          example: "International"
+        contact_email:
+          type: string
+          format: email
+        liaison_officer:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, SUSPENDED]
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Common ────────────────────────────────────────────────────────────────
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total records matching the query
+        page:
+          type: integer
+          description: Current page (1-indexed)
+        page_size:
+          type: integer
+          description: Records per page
+        pages:
+          type: integer
+          description: Total number of pages
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Unauthorized"
+        detail:
+          type: string
+          nullable: true
+          example: "Access token expired"
+        timestamp:
+          type: string
+          format: date-time
+
+    SuccessResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Authentication ─────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      operationId: authLogin
+      tags: [Authentication]
+      summary: Step 1 — Submit credentials, receive OTP via email
+      description: |
+        Validates badge number and password. On success, sends a 6-digit OTP
+        to the officer's registered email address and returns a short-lived
+        `session_token` for use in step 2.
+
+        Rate-limited to 5 attempts per 5 minutes per badge number.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Credentials accepted — OTP dispatched to registered email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpStepResponse'
+        '401':
+          description: Invalid badge number or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Account suspended or access revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many login attempts — try again later
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/verify-otp:
+    post:
+      operationId: authVerifyOtp
+      tags: [Authentication]
+      summary: Step 2 — Verify email OTP, receive JWT tokens
+      description: |
+        Exchanges the `session_token` from step 1 and the 6-digit OTP
+        delivered to the officer's email for a JWT `access_token` (15 min)
+        and `refresh_token` (7 days).
+
+        OTP expires after 10 minutes. Maximum 3 attempts before session invalidation.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: OTP verified — JWT tokens returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Invalid or expired OTP / session token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many OTP attempts — session invalidated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      operationId: authRefresh
+      tags: [Authentication]
+      summary: Rotate refresh token
+      description: Exchanges a valid refresh token for a new access + refresh token pair. Old refresh token is immediately invalidated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Refresh token invalid or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      operationId: authLogout
+      tags: [Authentication]
+      summary: Revoke current session
+      description: Invalidates the current refresh token server-side and records a logout audit event.
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [Intelligence]
+      summary: Aggregated dashboard statistics (institution-scoped)
+      description: Returns counts and summary metrics scoped to the caller's institution via RLS.
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ── Suspects ───────────────────────────────────────────────────────────────
+
+  /suspects:
+    get:
+      operationId: listSuspects
+      tags: [Suspects]
+      summary: List suspects with filtering and pagination
+      description: |
+        Returns suspect records visible to the caller's institution and clearance level.
+        NISS personnel see all records; other institutions see records at or below their clearance.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, WANTED, DETAINED, RELEASED, DECEASED]
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Partial name search (case-insensitive)
+        - name: clearance_level
+          in: query
+          schema:
+            $ref: '#/components/schemas/ClearanceLevel'
+        - name: institution
+          in: query
+          schema:
+            $ref: '#/components/schemas/Institution'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Paginated suspect list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suspects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Suspect'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: createSuspect
+      tags: [Suspects]
+      summary: Create new suspect record
+      description: Requires NISS_ANALYST, RIB_INVESTIGATOR, or RNP_COMMANDER and above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspectCreate'
+      responses:
+        '201':
+          description: Suspect created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suspect'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /suspects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: getSuspect
+      tags: [Suspects]
+      summary: Get suspect by ID
+      description: |
+        Returns full suspect record. TOP_SECRET suspects require a `justification`
+        query parameter which is logged to the audit trail.
+      parameters:
+        - name: justification
+          in: query
+          schema:
+            type: string
+          description: Required when accessing TOP_SECRET records
+      responses:
+        '200':
+          description: Suspect record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suspect'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateSuspect
+      tags: [Suspects]
+      summary: Update suspect record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspectCreate'
+      responses:
+        '200':
+          description: Updated suspect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suspect'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: deleteSuspect
+      tags: [Suspects]
+      summary: Soft-delete suspect record (NISS only)
+      description: Marks the record as deleted; data is retained for audit purposes.
+      responses:
+        '200':
+          description: Suspect soft-deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /suspects/{id}/warrants:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: listSuspectWarrants
+      tags: [Suspects]
+      summary: List warrants for suspect
+      responses:
+        '200':
+          description: Warrant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Warrant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      operationId: issueWarrant
+      tags: [Suspects]
+      summary: Issue new warrant for suspect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarrantCreate'
+      responses:
+        '201':
+          description: Warrant issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warrant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /warrants:
+    get:
+      operationId: listWarrants
+      tags: [Suspects]
+      summary: List all warrants
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, EXECUTED, CANCELLED, EXPIRED]
+        - name: warrant_type
+          in: query
+          schema:
+            type: string
+            enum: [ARREST, SEARCH, DETENTION, EXTRADITION]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Warrant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Warrant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Cases ──────────────────────────────────────────────────────────────────
+
+  /cases:
+    get:
+      operationId: listCases
+      tags: [Cases]
+      summary: List cases (institution-scoped for non-NISS)
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, CLOSED, SUSPENDED, REFERRED]
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Case list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Case'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: createCase
+      tags: [Cases]
+      summary: Create new case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseCreate'
+      responses:
+        '201':
+          description: Case created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /cases/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: getCase
+      tags: [Cases]
+      summary: Get case with linked suspects
+      responses:
+        '200':
+          description: Case record with suspects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateCase
+      tags: [Cases]
+      summary: Update case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseCreate'
+      responses:
+        '200':
+          description: Updated case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /cases/{id}/suspects:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      operationId: linkSuspectToCase
+      tags: [Cases]
+      summary: Link suspect to case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [suspect_id]
+              properties:
+                suspect_id:
+                  type: string
+                  format: uuid
+                role_in_case:
+                  type: string
+                  example: "Primary suspect"
+      responses:
+        '201':
+          description: Suspect linked to case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      operationId: unlinkSuspectFromCase
+      tags: [Cases]
+      summary: Remove suspect from case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [suspect_id]
+              properties:
+                suspect_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Suspect removed from case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Intelligence Events ────────────────────────────────────────────────────
+
+  /intelligence/events:
+    get:
+      operationId: listIntelligenceEvents
+      tags: [Intelligence]
+      summary: List intelligence events
+      parameters:
+        - name: source_tag
+          in: query
+          schema:
+            type: string
+        - name: criminal_record_found
+          in: query
+          schema:
+            type: boolean
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+        - name: officer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: suspect_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Intelligence event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IntelligenceEvent'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: createIntelligenceEvent
+      tags: [Intelligence]
+      summary: Submit new intelligence event
+      description: Used by DIV app, edge camera nodes, and field officers to submit intelligence reports.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntelligenceEventCreate'
+      responses:
+        '201':
+          description: Intelligence event recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntelligenceEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /intelligence/events/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: getIntelligenceEvent
+      tags: [Intelligence]
+      summary: Get intelligence event by ID
+      responses:
+        '200':
+          description: Intelligence event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntelligenceEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Alerts ─────────────────────────────────────────────────────────────────
+
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags: [Alerts]
+      summary: List alerts (institution-scoped)
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+        - name: is_read
+          in: query
+          schema:
+            type: boolean
+        - name: requires_action
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Alert list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Alert'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /alerts/{id}/read:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    patch:
+      operationId: markAlertRead
+      tags: [Alerts]
+      summary: Mark alert as read
+      responses:
+        '200':
+          description: Alert marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Infrastructure / Cameras ───────────────────────────────────────────────
+
+  /infrastructure/cameras:
+    get:
+      operationId: listCameraNodes
+      tags: [Infrastructure]
+      summary: List all camera nodes
+      responses:
+        '200':
+          description: Camera node list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CameraNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: createCameraNode
+      tags: [Infrastructure]
+      summary: Register a new camera node
+      description: Requires SYSTEM_ADMIN or NISS_DIRECTOR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CameraNodeCreate'
+      responses:
+        '201':
+          description: Camera node registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /infrastructure/cameras/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      operationId: getCameraNode
+      tags: [Infrastructure]
+      summary: Get camera node status
+      responses:
+        '200':
+          description: Camera node status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateCameraNode
+      tags: [Infrastructure]
+      summary: Update camera node (used for heartbeat)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ONLINE, OFFLINE, DEGRADED, MAINTENANCE]
+                last_heartbeat:
+                  type: string
+                  format: date-time
+                firmware_version:
+                  type: string
+      responses:
+        '200':
+          description: Camera node updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Location ───────────────────────────────────────────────────────────────
+
+  /location/recent:
+    get:
+      operationId: getRecentLocations
+      tags: [Location]
+      summary: Recent location records (clearance-gated)
+      description: Returns the most recent location records visible to the caller's clearance level.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Recent location records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LocationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /location/suspect/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: getSuspectLocationHistory
+      tags: [Location]
+      summary: Location history for a specific suspect
+      description: |
+        Returns the movement history for a suspect. Requires SECRET clearance minimum.
+        TOP_SECRET suspects require a written `justification` which is audited.
+      parameters:
+        - name: justification
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Written justification for accessing location data (audited)
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Suspect location history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LocationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Corrections ────────────────────────────────────────────────────────────
+
+  /corrections:
+    get:
+      operationId: listCorrections
+      tags: [Corrections]
+      summary: List corrections/detention records
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DETAINED, RELEASED, TRANSFERRED, ESCAPED]
+        - name: suspect_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Corrections records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CorrectionsRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      operationId: createCorrectionsRecord
+      tags: [Corrections]
+      summary: Create corrections/detention record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionsCreate'
+      responses:
+        '201':
+          description: Corrections record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionsRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /corrections/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      operationId: getCorrectionsRecord
+      tags: [Corrections]
+      summary: Get corrections record by ID
+      responses:
+        '200':
+          description: Corrections record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionsRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateCorrectionsRecord
+      tags: [Corrections]
+      summary: Update corrections record (e.g. record release)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [DETAINED, RELEASED, TRANSFERRED, ESCAPED]
+                detention_end:
+                  type: string
+                  format: date-time
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Updated corrections record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionsRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── SIEM ───────────────────────────────────────────────────────────────────
+
+  /siem/events:
+    get:
+      operationId: listSiemEvents
+      tags: [SIEM]
+      summary: List SIEM events (NISS/SIEM_ANALYST only)
+      description: Returns security events from the SIEM log. Access restricted to NISS roles and SIEM_ANALYST.
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [LOW, MEDIUM, HIGH, CRITICAL]
+        - name: is_reviewed
+          in: query
+          schema:
+            type: boolean
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: SIEM event list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SiemEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      operationId: createSiemEvent
+      tags: [SIEM]
+      summary: Create SIEM event (internal system use)
+      description: Used internally by middleware to record security events. Requires SYSTEM role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_type, severity, description]
+              properties:
+                event_type:
+                  type: string
+                  enum: [AUTH_FAILURE, PRIVILEGE_ESCALATION, UNUSUAL_ACCESS, DATA_EXPORT, LOCKDOWN_TRIGGERED, REVOCATION, POLICY_VIOLATION]
+                severity:
+                  type: string
+                  enum: [LOW, MEDIUM, HIGH, CRITICAL]
+                actor_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                target_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                description:
+                  type: string
+      responses:
+        '201':
+          description: SIEM event recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiemEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /siem/events/{id}/review:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    patch:
+      operationId: reviewSiemEvent
+      tags: [SIEM]
+      summary: Mark SIEM event as reviewed
+      description: Records the reviewing analyst and their notes against the SIEM event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiemReviewRequest'
+      responses:
+        '200':
+          description: SIEM event reviewed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiemEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Audit ──────────────────────────────────────────────────────────────────
+
+  /audit:
+    get:
+      operationId: queryAuditLog
+      tags: [Administration]
+      summary: Query audit log (clearance-gated)
+      description: |
+        Returns audit log entries. Full access requires NISS_DIRECTOR or SYSTEM_ADMIN.
+        Other roles can only query their own institution's entries.
+      parameters:
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ── Admin ──────────────────────────────────────────────────────────────────
+
+  /admin/emergency-lockdown:
+    post:
+      operationId: triggerEmergencyLockdown
+      tags: [Administration]
+      summary: Activate emergency lockdown (dual NISS Director auth)
+      description: |
+        Revokes **all non-NISS sessions** immediately and prevents new logins for
+        non-NISS personnel until the lockdown is manually lifted.
+
+        **Requires two NISS Director authorizations** — the calling director's JWT
+        and the UUID of a second NISS Director who must have an active session.
+
+        This action:
+        - Is permanent until manually lifted via the admin console
+        - Creates SIEM events of severity CRITICAL
+        - Sends emergency alerts to all NISS Directors
+        - Is fully and irrevocably audited
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [second_director_id, reason]
+              properties:
+                second_director_id:
+                  type: string
+                  format: uuid
+                  description: UUID of the second NISS Director authorizing this action
+                reason:
+                  type: string
+                  description: Written justification (minimum 20 characters)
+                  minLength: 20
+      responses:
+        '200':
+          description: Lockdown activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Emergency lockdown activated. All non-NISS sessions revoked."
+                  sessions_revoked:
+                    type: integer
+                  activated_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/revoke-access:
+    post:
+      operationId: revokeUserAccess
+      tags: [Administration]
+      summary: Revoke user access immediately
+      description: |
+        Immediately revokes all active sessions for the target user and marks
+        their account as suspended. Requires NISS_DIRECTOR or SYSTEM_ADMIN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_user_id, reason]
+              properties:
+                target_user_id:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                  minLength: 10
+      responses:
+        '200':
+          description: Access revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Partners ───────────────────────────────────────────────────────────────
+
+  /partners:
+    get:
+      operationId: listPartners
+      tags: [Partners]
+      summary: List international law enforcement partners
+      description: Returns international partner agencies. Requires SECRET clearance minimum.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, SUSPENDED]
+      responses:
+        '200':
+          description: Partner list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Partner'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Reusable responses
+  # ─────────────────────────────────────────────────────────────────────────
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Unauthorized
+            detail: Access token missing or expired
+            timestamp: "2025-06-30T10:00:00Z"
+    Forbidden:
+      description: Authenticated but insufficient role or clearance
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Forbidden
+            detail: Your clearance level does not permit this operation
+            timestamp: "2025-06-30T10:00:00Z"
+    NotFound:
+      description: Resource not found or not visible at caller's clearance
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Not Found
+            detail: The requested resource does not exist
+            timestamp: "2025-06-30T10:00:00Z"
+    BadRequest:
+      description: Malformed request body or invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Bad Request
+            detail: "field 'full_name' is required"
+            timestamp: "2025-06-30T10:00:00Z"
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Internal Server Error
+            detail: An unexpected error occurred
+            timestamp: "2025-06-30T10:00:00Z"
