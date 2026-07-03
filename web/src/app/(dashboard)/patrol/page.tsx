@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { statsApi } from '@/lib/api'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
@@ -8,13 +8,6 @@ import { AlertTriangle, Search, Activity, Shield, Info, MapPin, CheckCircle, XCi
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import type { IntelligenceEvent } from '@/types'
-import { DAM_MY_EVENTS, DAM_ALERTS } from '@/lib/dam'
-
-const PATROL_STATS = [
-  { label: 'Verifications Today', value: 4 },
-  { label: 'Records Found', value: 1 },
-  { label: 'Reports Filed', value: 1 },
-]
 
 const QUICK_ACTIONS = [
   {
@@ -49,17 +42,28 @@ const QUICK_ACTIONS = [
 
 export default function PatrolDashboard() {
   const { user } = useAuth()
-  const [myEvents, setMyEvents] = useState<IntelligenceEvent[]>(DAM_MY_EVENTS)
+  const [loading, setLoading] = useState(true)
+  const [myEvents, setMyEvents] = useState<IntelligenceEvent[]>([])
 
-  useEffect(() => {
-    statsApi.getRecentEvents(10).then((r: { data: IntelligenceEvent[] }) => {
-      const filtered = r.data?.filter((e: IntelligenceEvent) => e.reporting_officer_id === user?.id)
-      if (filtered?.length) setMyEvents(filtered)
-    }).catch(() => {})
+  const load = useCallback(() => {
+    if (!user?.id) return
+    setLoading(true)
+    statsApi.getRecentEvents(50).then(r => {
+      const filtered = (r.data ?? []).filter(
+        (e: IntelligenceEvent) => e.reporting_officer_id === user.id
+      )
+      setMyEvents(filtered)
+    }).catch(console.error)
+      .finally(() => setLoading(false))
   }, [user?.id])
 
+  useEffect(() => { load() }, [load])
+
   const recordsFound = myEvents.filter(e => e.criminal_record_found).length
-  const verificationCount = myEvents.filter(e => ['NID_SCAN', 'NID_MANUAL', 'FACE_SCAN'].includes(e.source_tag)).length
+  const verificationCount = myEvents.filter(e =>
+    ['NID_SCAN', 'NID_MANUAL', 'FACE_SCAN'].includes(e.source_tag)
+  ).length
+  const reportCount = myEvents.filter(e => e.source_tag === 'OFFICER_REPORT').length
 
   return (
     <div className="space-y-6">
@@ -94,24 +98,34 @@ export default function PatrolDashboard() {
       {/* Today's stats */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-4 text-center">
-          <p className="text-2xl font-bold text-white">{verificationCount}</p>
+          {loading ? (
+            <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
+          ) : (
+            <p className="text-2xl font-bold text-white">{verificationCount}</p>
+          )}
           <p className="text-xs text-slate-400 mt-1">Verifications Today</p>
         </div>
         <div className={clsx(
           'rounded-xl border p-4 text-center',
           recordsFound > 0 ? 'border-red-900/50 bg-red-950/20' : 'border-green-900/50 bg-green-950/20'
         )}>
-          <p className={clsx('text-2xl font-bold', recordsFound > 0 ? 'text-red-400' : 'text-green-400')}>
-            {recordsFound}
-          </p>
+          {loading ? (
+            <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
+          ) : (
+            <p className={clsx('text-2xl font-bold', recordsFound > 0 ? 'text-red-400' : 'text-green-400')}>
+              {recordsFound}
+            </p>
+          )}
           <p className={clsx('text-xs mt-1', recordsFound > 0 ? 'text-red-400/70' : 'text-green-400/70')}>
             {recordsFound > 0 ? 'Records Found' : 'All Clear'}
           </p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-4 text-center">
-          <p className="text-2xl font-bold text-white">
-            {myEvents.filter(e => e.source_tag === 'OFFICER_REPORT').length}
-          </p>
+          {loading ? (
+            <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
+          ) : (
+            <p className="text-2xl font-bold text-white">{reportCount}</p>
+          )}
           <p className="text-xs text-slate-400 mt-1">Reports Filed</p>
         </div>
       </div>
@@ -121,8 +135,7 @@ export default function PatrolDashboard() {
         <h2 className="text-sm font-semibold text-slate-200 mb-3">Available Actions</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {QUICK_ACTIONS.map(action => (
-            <div key={action.title}
-              className={clsx('rounded-xl border p-5', action.color)}>
+            <div key={action.title} className={clsx('rounded-xl border p-5', action.color)}>
               <div className="flex items-start justify-between mb-3">
                 <action.icon className="h-7 w-7" />
                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-black/20">
@@ -143,7 +156,11 @@ export default function PatrolDashboard() {
             <Activity className="h-4 w-4 text-slate-400" />
             <h2 className="text-sm font-semibold text-slate-200">My Verification Log</h2>
           </div>
-          {myEvents.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 rounded-lg bg-slate-800 animate-pulse" />
+            ))}</div>
+          ) : myEvents.length === 0 ? (
             <p className="text-sm text-slate-500 py-6 text-center">No activity recorded yet today</p>
           ) : (
             <div className="space-y-2">
@@ -183,7 +200,7 @@ export default function PatrolDashboard() {
 
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
           <h2 className="mb-4 text-sm font-semibold text-slate-200">Active Alerts</h2>
-          <AlertFeed limit={5} initialAlerts={DAM_ALERTS.filter(a => a.severity === 'LOW')} />
+          <AlertFeed limit={5} />
         </div>
       </div>
 
