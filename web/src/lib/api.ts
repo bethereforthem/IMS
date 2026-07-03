@@ -75,12 +75,22 @@ export const statsApi = {
 // ─── Suspects ────────────────────────────────────────────────────────────────
 
 export const suspectsApi = {
-  list: (params?: { status?: string; limit?: number; offset?: number }) =>
+  list: (params?: { status?: string; limit?: number; offset?: number; name?: string }) =>
     api.get<{ suspects: Suspect[]; total: number }>('/suspects', { params }),
   get: (id: string) => api.get<Suspect>(`/suspects/${id}`),
   getWanted: () =>
     api.get<{ suspects: Suspect[]; total: number }>('/suspects?status=WANTED&limit=50')
       .then(r => ({ ...r, data: r.data?.suspects ?? [] as Suspect[] })),
+  create: (data: {
+    first_name: string
+    last_name: string
+    owning_institution: string
+    status?: string
+    threat_level?: number
+    nationality?: string
+    clearance_level?: string
+    notes?: string
+  }) => api.post<Suspect>('/suspects', data),
 }
 
 // ─── Intelligence events ─────────────────────────────────────────────────────
@@ -116,6 +126,16 @@ export const cameraApi = {
 export const casesApi = {
   list: (params?: { status?: string; limit?: number }) =>
     api.get<{ cases: Case[]; total: number }>('/cases', { params }),
+  create: (data: {
+    title: string
+    lead_institution: string
+    category?: string
+    status?: string
+    clearance_level?: string
+    summary?: string
+    incident_date?: string
+    location_name?: string
+  }) => api.post<Case>('/cases', data),
 }
 
 // ─── SIEM (NISS/SIEM_ANALYST only — blocked by RLS otherwise) ────────────────
@@ -141,6 +161,16 @@ export const alertsApi = {
 export const warrantsApi = {
   list: (params?: { active?: boolean; priority?: string; limit?: number }) =>
     api.get<{ warrants: Record<string, unknown>[]; total: number }>('/warrants', { params }),
+  create: (data: {
+    suspect_id: string
+    charges: string
+    warrant_type?: string
+    issued_by_court?: string
+    case_reference?: string
+    expires_at?: string
+    priority?: string
+    notes?: string
+  }) => api.post<Record<string, unknown>>('/warrants', data),
 }
 
 // ─── Corrections ──────────────────────────────────────────────────────────────
@@ -148,6 +178,18 @@ export const warrantsApi = {
 export const correctionsApi = {
   list: (params?: { custody_status?: string; limit?: number }) =>
     api.get<{ records: Record<string, unknown>[]; total: number }>('/corrections', { params }),
+  create: (data: {
+    suspect_id: string
+    facility_name: string
+    cell_block?: string
+    custody_status?: string
+    intake_date?: string
+    sentence_years?: number
+    court_name?: string
+    offense_description?: string
+    next_review?: string
+    threat_level?: number
+  }) => api.post<Record<string, unknown>>('/corrections', data),
 }
 
 // ─── International partners ───────────────────────────────────────────────────
