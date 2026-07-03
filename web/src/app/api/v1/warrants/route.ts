@@ -45,3 +45,66 @@ export const GET = withAuth(async (req: NextRequest, { user }) => {
     return apiError('Internal server error', 500)
   }
 }, 'suspects:read')
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/warrants
+// ---------------------------------------------------------------------------
+export const POST = withAuth(async (req: NextRequest, { user }) => {
+  try {
+    const body = await req.json()
+    const {
+      suspect_id,
+      charges,
+      warrant_type,
+      issued_by_court,
+      case_reference,
+      expires_at,
+      priority,
+      notes,
+    } = body
+
+    if (!suspect_id || !charges) {
+      return apiError('suspect_id and charges are required', 400)
+    }
+
+    const supabase = createServerSupabaseClient()
+
+    const { data: suspect, error: suspectError } = await supabase
+      .from('suspects')
+      .select('id')
+      .eq('id', suspect_id)
+      .single()
+
+    if (suspectError || !suspect) {
+      return apiError('Suspect not found', 404)
+    }
+
+    const { data: warrant, error } = await supabase
+      .from('warrants')
+      .insert({
+        suspect_id,
+        charges,
+        warrant_type: warrant_type ?? 'ARREST',
+        issued_by: user.institution,
+        issued_by_court: issued_by_court ?? null,
+        case_reference: case_reference ?? null,
+        expires_at: expires_at ?? null,
+        priority: priority ?? 'HIGH',
+        notes: notes ?? null,
+        active: true,
+        issued_at: new Date().toISOString(),
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[POST /api/v1/warrants]', error)
+      return apiError('Failed to create warrant', 500)
+    }
+
+    return apiSuccess(warrant, 201)
+  } catch (err) {
+    console.error('[POST /api/v1/warrants]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'suspects:write')
