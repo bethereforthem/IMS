@@ -17,15 +17,14 @@ DECLARE
 
   -- Institution IDs
   inst_niss UUID; inst_rnp UUID; inst_rib UUID; inst_rdf UUID;
-  inst_rcs UUID; inst_irondo UUID; inst_dasso UUID;
+  inst_rcs UUID; inst_village UUID;
 BEGIN
-  SELECT id INTO inst_niss FROM institutions WHERE code = 'NISS';
-  SELECT id INTO inst_rnp  FROM institutions WHERE code = 'RNP';
-  SELECT id INTO inst_rib  FROM institutions WHERE code = 'RIB';
-  SELECT id INTO inst_rdf  FROM institutions WHERE code = 'RDF';
-  SELECT id INTO inst_rcs  FROM institutions WHERE code = 'RCS';
-  SELECT id INTO inst_irondo FROM institutions WHERE code = 'IRONDO';
-  SELECT id INTO inst_dasso FROM institutions WHERE code = 'DASSO';
+  SELECT id INTO inst_niss    FROM institutions WHERE code = 'NISS';
+  SELECT id INTO inst_rnp     FROM institutions WHERE code = 'RNP';
+  SELECT id INTO inst_rib     FROM institutions WHERE code = 'RIB';
+  SELECT id INTO inst_rdf     FROM institutions WHERE code = 'RDF';
+  SELECT id INTO inst_rcs     FROM institutions WHERE code = 'RCS';
+  SELECT id INTO inst_village FROM institutions WHERE code = 'VILLAGE_LEADER';
 
   -- --------------------------------------------------------
   -- NISS (National Intelligence and Security Service)
@@ -91,14 +90,14 @@ BEGIN
   ON CONFLICT (badge_number) DO NOTHING;
 
   -- --------------------------------------------------------
-  -- Irondo & Dasso (community patrol — limited access)
+  -- Village Leaders (community intelligence reporting — limited access)
   -- --------------------------------------------------------
   INSERT INTO users (institution_id, role, clearance_level, badge_number, full_name, email, phone, password_hash, totp_secret, active)
   VALUES
-  (inst_irondo, 'IRONDO_PATROL','UNCLASSIFIED','IRO-PAT-001','Augustin Harerimana',   'a.harerimana@irondo.gov.rw', '+250788600001', pwd_hash, demo_totp, TRUE),
-  (inst_irondo, 'IRONDO_PATROL','UNCLASSIFIED','IRO-PAT-002','Félicité Mukabagwiza',  'f.mukabagwiza@irondo.gov.rw','+250788600002', pwd_hash, demo_totp, TRUE),
-  (inst_dasso,  'DASSO_OFFICER','UNCLASSIFIED','DAS-OFF-001','Révérien Nsengimana',   'r.nsengimana@dasso.gov.rw',  '+250788700001', pwd_hash, demo_totp, TRUE),
-  (inst_dasso,  'DASSO_OFFICER','UNCLASSIFIED','DAS-OFF-002','Vestine Umulisa',       'v.umulisa@dasso.gov.rw',     '+250788700002', pwd_hash, demo_totp, TRUE)
+  (inst_village, 'VILLAGE_LEADER','UNCLASSIFIED','VL-001','Augustin Harerimana',  'a.harerimana@village.gov.rw', '+250788600001', pwd_hash, demo_totp, TRUE),
+  (inst_village, 'VILLAGE_LEADER','UNCLASSIFIED','VL-002','Félicité Mukabagwiza', 'f.mukabagwiza@village.gov.rw','+250788600002', pwd_hash, demo_totp, TRUE),
+  (inst_village, 'VILLAGE_LEADER','UNCLASSIFIED','VL-003','Révérien Nsengimana',  'r.nsengimana@village.gov.rw', '+250788700001', pwd_hash, demo_totp, TRUE),
+  (inst_village, 'VILLAGE_LEADER','UNCLASSIFIED','VL-004','Vestine Umulisa',      'v.umulisa@village.gov.rw',    '+250788700002', pwd_hash, demo_totp, TRUE)
   ON CONFLICT (badge_number) DO NOTHING;
 
 END $$;
