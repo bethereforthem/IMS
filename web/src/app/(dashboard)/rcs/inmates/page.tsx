@@ -145,9 +145,11 @@ export default function InmatesPage() {
         )}
         {inmates.map((r: Record<string, unknown>) => {
           const threatLevel = r.threat_level as number
-          const intakeDays = differenceInDays(TODAY, new Date(r.intake_date as string))
-          const reviewDays = differenceInDays(new Date(r.next_review as string), TODAY)
-          const reviewSoon = reviewDays <= 7
+          const intakeDate  = r.intake_date  ? new Date(r.intake_date  as string) : null
+          const reviewDate  = r.next_review  ? new Date(r.next_review  as string) : null
+          const intakeDays  = intakeDate && !isNaN(intakeDate.getTime()) ? differenceInDays(TODAY, intakeDate) : null
+          const reviewDays  = reviewDate && !isNaN(reviewDate.getTime()) ? differenceInDays(reviewDate, TODAY)  : null
+          const reviewSoon  = reviewDays !== null && reviewDays <= 7
           const threatInfo = THREAT_LABEL[threatLevel]
 
           return (
@@ -219,17 +221,19 @@ export default function InmatesPage() {
                   <div>
                     <p className="text-[10px] uppercase text-slate-500 font-semibold mb-0.5">Intake Date</p>
                     <p className="text-slate-300">
-                      {format(new Date(r.intake_date as string), 'dd MMM yyyy')}
+                      {intakeDate && !isNaN(intakeDate.getTime()) ? format(intakeDate, 'dd MMM yyyy') : '—'}
                     </p>
-                    <p className="text-[10px] text-slate-500">{intakeDays} days ago</p>
+                    <p className="text-[10px] text-slate-500">
+                      {intakeDays !== null ? `${intakeDays} days ago` : '—'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase text-slate-500 font-semibold mb-0.5">Next Review</p>
                     <p className={clsx('font-medium', reviewSoon ? 'text-amber-400' : 'text-slate-300')}>
-                      {format(new Date(r.next_review as string), 'dd MMM yyyy')}
+                      {reviewDate && !isNaN(reviewDate.getTime()) ? format(reviewDate, 'dd MMM yyyy') : '—'}
                     </p>
                     <p className={clsx('text-[10px]', reviewSoon ? 'text-amber-500' : 'text-slate-500')}>
-                      in {reviewDays} days{reviewSoon && ' ⚠'}
+                      {reviewDays !== null ? `in ${reviewDays} days${reviewSoon ? ' ⚠' : ''}` : 'No review scheduled'}
                     </p>
                   </div>
                 </div>
