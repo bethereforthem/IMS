@@ -4,38 +4,38 @@ import { statsApi } from '@/lib/api'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { useAuth } from '@/hooks/useAuth'
-import { AlertTriangle, Search, Activity, Shield, Info, MapPin, CheckCircle, XCircle, FileText } from 'lucide-react'
+import { AlertTriangle, Search, Shield, FileText, Info, MapPin, CheckCircle, XCircle, Activity, Users } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import type { IntelligenceEvent } from '@/types'
 
 const QUICK_ACTIONS = [
   {
+    icon: AlertTriangle,
+    color: 'text-amber-400 bg-amber-950/40 border-amber-900/50',
+    title: 'Report Insecurity',
+    description: 'Submit a community security report about an individual causing insecurity in your village. Report goes directly to RNP for investigation.',
+    badge: 'PRIMARY',
+  },
+  {
     icon: Search,
     color: 'text-teal-400 bg-teal-950/40 border-teal-900/50',
     title: 'NID Verification',
-    description: 'Scan or manually enter a National ID via the DIV mobile app. Result: record found or clean citizen.',
+    description: 'Scan or manually enter a National ID via the DIV mobile app to verify identity. Result: record found or clean citizen.',
     badge: 'MOBILE APP',
   },
   {
     icon: Shield,
     color: 'text-purple-400 bg-purple-950/40 border-purple-900/50',
     title: 'Face Scan',
-    description: 'Use the DIV app front camera for biometric face identification. GPS captured on record find.',
-    badge: 'MOBILE APP',
-  },
-  {
-    icon: AlertTriangle,
-    color: 'text-amber-400 bg-amber-950/40 border-amber-900/50',
-    title: 'Report Incident',
-    description: 'Submit an officer report for suspicious individuals or community-level incidents.',
+    description: 'Use the DIV app front camera for biometric face identification. GPS is captured automatically when a criminal record is found.',
     badge: 'MOBILE APP',
   },
   {
     icon: MapPin,
     color: 'text-blue-400 bg-blue-950/40 border-blue-900/50',
     title: 'GPS Location',
-    description: 'Your GPS coordinates are automatically captured when a criminal record is found during verification.',
+    description: 'Your GPS coordinates are automatically captured when a criminal record is found during verification or when a report is filed.',
     badge: 'AUTO',
   },
 ]
@@ -59,51 +59,59 @@ export default function PatrolDashboard() {
 
   useEffect(() => { load() }, [load])
 
-  const recordsFound = myEvents.filter(e => e.criminal_record_found).length
-  const verificationCount = myEvents.filter(e =>
+  const recordsFound    = myEvents.filter(e => e.criminal_record_found).length
+  const reportsCount    = myEvents.filter(e => e.source_tag === 'OFFICER_REPORT').length
+  const verifications   = myEvents.filter(e =>
     ['NID_SCAN', 'NID_MANUAL', 'FACE_SCAN'].includes(e.source_tag)
   ).length
-  const reportCount = myEvents.filter(e => e.source_tag === 'OFFICER_REPORT').length
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Patrol Dashboard</h1>
+          <h1 className="text-xl font-bold text-white">Village Leader Portal</h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            {user?.full_name} · {user?.role === 'IRONDO_PATROL' ? 'Irondo Patrol' : 'Dasso Officer'} · {user?.badge_number}
+            {user?.full_name} · Village Leader · {user?.badge_number}
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg">
           <div className="h-1.5 w-1.5 rounded-full bg-patrol animate-pulse" />
-          {user?.role === 'IRONDO_PATROL' ? 'Irondo' : 'Dasso'}
+          Community Intelligence
         </div>
       </div>
 
-      {/* Access scope notice */}
-      <div className="rounded-xl border border-blue-900 bg-blue-950/20 p-4 flex items-start gap-3">
-        <Info className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
+      {/* Role notice */}
+      <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4 flex items-start gap-3">
+        <Users className="h-5 w-5 text-amber-400 mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-semibold text-blue-300">Community Patrol — Restricted Access</p>
-          <p className="text-xs text-blue-400/80 mt-1">
-            As {user?.role === 'IRONDO_PATROL' ? 'Irondo Patrol' : 'Dasso Officer'}, you perform identity
-            verification checks via the mobile DIV app. Results indicate whether a criminal record
-            exists — no suspect names, profiles, location data, or case details are accessible at
-            your clearance level. Your GPS is captured when a record is found.
+          <p className="text-sm font-semibold text-amber-300">Village Leader — Community Intelligence Reporting</p>
+          <p className="text-xs text-amber-400/80 mt-1">
+            Community members (Irondo) report individuals causing insecurity to you. As a Village Leader,
+            you submit these reports directly into the intelligence system for follow-up by RNP and RIB.
+            You see only the outcome of your own reports — no suspect profiles, case details, or
+            classified data are accessible at your clearance level.
           </p>
         </div>
       </div>
 
-      {/* Today's stats */}
+      {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-4 text-center">
           {loading ? (
             <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
           ) : (
-            <p className="text-2xl font-bold text-white">{verificationCount}</p>
+            <p className="text-2xl font-bold text-white">{reportsCount}</p>
           )}
-          <p className="text-xs text-slate-400 mt-1">Verifications Today</p>
+          <p className="text-xs text-slate-400 mt-1">Reports Filed</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-4 text-center">
+          {loading ? (
+            <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
+          ) : (
+            <p className="text-2xl font-bold text-white">{verifications}</p>
+          )}
+          <p className="text-xs text-slate-400 mt-1">ID Verifications</p>
         </div>
         <div className={clsx(
           'rounded-xl border p-4 text-center',
@@ -119,14 +127,6 @@ export default function PatrolDashboard() {
           <p className={clsx('text-xs mt-1', recordsFound > 0 ? 'text-red-400/70' : 'text-green-400/70')}>
             {recordsFound > 0 ? 'Records Found' : 'All Clear'}
           </p>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-4 text-center">
-          {loading ? (
-            <div className="h-8 w-16 rounded bg-slate-700 animate-pulse mx-auto" />
-          ) : (
-            <p className="text-2xl font-bold text-white">{reportCount}</p>
-          )}
-          <p className="text-xs text-slate-400 mt-1">Reports Filed</p>
         </div>
       </div>
 
@@ -149,19 +149,19 @@ export default function PatrolDashboard() {
         </div>
       </div>
 
-      {/* My events + Alerts */}
+      {/* My reports log + Alerts */}
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="h-4 w-4 text-slate-400" />
-            <h2 className="text-sm font-semibold text-slate-200">My Verification Log</h2>
+            <h2 className="text-sm font-semibold text-slate-200">My Report Log</h2>
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-10 rounded-lg bg-slate-800 animate-pulse" />
             ))}</div>
           ) : myEvents.length === 0 ? (
-            <p className="text-sm text-slate-500 py-6 text-center">No activity recorded yet today</p>
+            <p className="text-sm text-slate-500 py-6 text-center">No reports or verifications filed yet</p>
           ) : (
             <div className="space-y-2">
               {myEvents.map(ev => (
@@ -174,7 +174,12 @@ export default function PatrolDashboard() {
                   )}>
                   <SourceTagBadge tag={ev.source_tag} />
                   <div className="flex-1 min-w-0">
-                    {ev.criminal_record_found ? (
+                    {ev.source_tag === 'OFFICER_REPORT' ? (
+                      <div className="flex items-center gap-1.5">
+                        <FileText className="h-3 w-3 text-amber-400 shrink-0" />
+                        <span className="text-amber-400 font-medium">Community report submitted</span>
+                      </div>
+                    ) : ev.criminal_record_found ? (
                       <div className="flex items-center gap-1.5">
                         <XCircle className="h-3 w-3 text-red-400 shrink-0" />
                         <span className="text-red-400 font-bold">RECORD FOUND — Alert sent</span>
@@ -204,15 +209,16 @@ export default function PatrolDashboard() {
         </div>
       </div>
 
-      {/* Privacy reminder */}
+      {/* Privacy notice */}
       <div className="rounded-xl border border-slate-700 bg-slate-800/40 p-4 flex items-start gap-3">
-        <FileText className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+        <Info className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
         <div>
           <p className="text-xs font-semibold text-slate-300">Privacy Notice — Law No. 058/2021</p>
           <p className="text-xs text-slate-500 mt-1">
-            Verification results for clean citizens are immediately discarded — no data is stored
-            when no criminal record is found. Your GPS location is captured only when a record match
-            is confirmed. All verification events are immutably logged in the audit trail.
+            Verification results for clean citizens are immediately discarded — no personal data is
+            stored when no criminal record is found. Your GPS location is captured only when a record
+            match is confirmed or when a community report is filed. All activity is immutably logged
+            in the audit trail.
           </p>
         </div>
       </div>
