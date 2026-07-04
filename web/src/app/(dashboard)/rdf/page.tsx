@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { statsApi, cameraApi } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
@@ -19,6 +20,8 @@ const BORDER_POSTS = [
   { name: 'Rusizi', country: 'Burundi', code: 'RSZ', prefix: 'RSZ-' },
   { name: 'Nyagatare', country: 'Uganda', code: 'NYG', prefix: 'NYG-' },
 ]
+
+const BorderMap = dynamic(() => import('./map/_BorderMap'), { ssr: false })
 
 function SkeletonCard() {
   return <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-24 animate-pulse" />
@@ -113,6 +116,17 @@ export default function RDFBorderOps() {
       ) : (
         <p className="text-sm text-slate-500 py-4">Could not load statistics.</p>
       )}
+
+      {/* Border Intelligence Map */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <MapPin className="h-4 w-4 text-rdf" />
+          <h2 className="text-sm font-semibold text-slate-200">Border Intelligence Map</h2>
+          <span className="ml-1 text-[10px] text-green-500 font-mono animate-pulse">● LIVE</span>
+          <span className="ml-auto text-[10px] text-slate-500">Use the layer panel (top-right) to switch base maps and toggle overlays</span>
+        </div>
+        <BorderMap cameras={cameras} events={events} />
+      </div>
 
       {/* Camera nodes + Alerts */}
       <div className="grid gap-6 lg:grid-cols-2">
