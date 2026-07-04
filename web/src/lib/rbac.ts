@@ -111,6 +111,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'nid:scan',
     'watchlist:read',
     'alerts:read',
+    'source_attribution:read',
   ]),
 
   RCS_SUPERINTENDENT: new Set([
@@ -131,14 +132,10 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'watchlist:read',
   ]),
 
-  IRONDO_PATROL: new Set([
+  VILLAGE_LEADER: new Set([
     'watchlist:read',
     'nid:scan:result_only',
-  ]),
-
-  DASSO_OFFICER: new Set([
-    'watchlist:read',
-    'nid:scan:result_only',
+    'intel:report',
   ]),
 
   SIEM_ANALYST: new Set([
@@ -178,7 +175,7 @@ export function dashboardRouteForRole(role: string): string {
   if (role.startsWith('RIB')) return '/rib'
   if (role.startsWith('RDF')) return '/rdf'
   if (role.startsWith('RCS')) return '/rcs'
-  if (role === 'IRONDO_PATROL' || role === 'DASSO_OFFICER') return '/patrol'
+  if (role === 'VILLAGE_LEADER') return '/patrol'
   return '/login'
 }
 
@@ -188,8 +185,7 @@ export function institutionForRole(role: string): Institution {
   if (role.startsWith('RIB')) return 'RIB'
   if (role.startsWith('RDF')) return 'RDF'
   if (role.startsWith('RCS')) return 'RCS'
-  if (role === 'IRONDO_PATROL') return 'IRONDO'
-  if (role === 'DASSO_OFFICER') return 'DASSO'
+  if (role === 'VILLAGE_LEADER') return 'VILLAGE_LEADER'
   return 'SYSTEM'
 }
 
