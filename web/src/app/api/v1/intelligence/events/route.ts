@@ -14,8 +14,12 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
 
     const source_tag = url.searchParams.get('source_tag')
     const criminal_record_found = url.searchParams.get('criminal_record_found')
+    const alert_generated = url.searchParams.get('alert_generated')
+    const has_location = url.searchParams.get('has_location')
+    const since = url.searchParams.get('since')          // ISO timestamp — only events after this
     const officer_id = url.searchParams.get('officer_id')
     const suspect_id = url.searchParams.get('suspect_id')
+    const institution = url.searchParams.get('institution')
 
     const { pageSize, offset } = getPagination(req)
     const rawLimit = parseInt(url.searchParams.get('limit') ?? String(pageSize), 10)
@@ -31,8 +35,18 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
     if (criminal_record_found !== null) {
       query = query.eq('criminal_record_found', criminal_record_found === 'true')
     }
+    if (alert_generated !== null) {
+      query = query.eq('alert_generated', alert_generated === 'true')
+    }
+    if (has_location === 'true') {
+      query = query.not('location_lat', 'is', null).not('location_lng', 'is', null)
+    }
+    if (since) {
+      query = query.gte('event_timestamp', since)
+    }
     if (officer_id) query = query.eq('officer_id', officer_id)
     if (suspect_id) query = query.eq('suspect_id', suspect_id)
+    if (institution) query = query.eq('institution', institution)
 
     const { data: events, count, error } = await query
 
@@ -44,6 +58,9 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
     const mappedEvents = (events ?? []).map((e: Record<string, unknown> & { suspects?: Record<string, unknown> | null }) => ({
       ...e,
       suspect_name: e.suspects?.full_name ?? null,
+      suspect_status: e.suspects?.status ?? null,
+      suspect_threat_level: e.suspects?.threat_level ?? null,
+      suspect_ims_reference: e.suspects?.ims_reference ?? null,
       reporting_officer_id: e.officer_id,
       confidence_score: e.confidence,
       created_at: e.event_timestamp ?? e.created_at,
