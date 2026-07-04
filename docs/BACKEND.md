@@ -100,7 +100,7 @@ Copy `.env.example` to `.env.local` and fill in all required values before start
 ### Install
 
 ```bash
-cd d:\InnovationHub\RCIMS\web
+cd d:\InnovationHub\IMS\web
 pnpm install
 ```
 
