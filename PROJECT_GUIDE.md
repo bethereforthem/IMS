@@ -1,4 +1,4 @@
-# Rwanda Criminal Intelligence Management System (RCIMS) v3.0
+# Rwanda Criminal Intelligence Management System (IMS) v3.0
 ## Project Guide & Technical Reference
 
 ---
@@ -22,9 +22,9 @@
 
 ## 1. Introduction
 
-The Rwanda Criminal Intelligence Management System (RCIMS) version 3.0 is a unified, multi-institutional intelligence and identity verification platform built to modernize how Rwanda's security and justice institutions collect, share, and act on criminal intelligence.
+The Rwanda Criminal Intelligence Management System (IMS) version 3.0 is a unified, multi-institutional intelligence and identity verification platform built to modernize how Rwanda's security and justice institutions collect, share, and act on criminal intelligence.
 
-Rwanda operates with a network of six distinct security and law enforcement institutions — the Rwanda National Police (RNP), the Rwanda Investigation Bureau (RIB), the Rwanda Defence Force (RDF), the National Intelligence and Security Service (NISS), the Rwanda Correctional Service (RCS), and community-level forces (Irondo and Dasso). Historically, each institution maintained its own isolated records. RCIMS v3.0 replaces that siloed approach with a single, role-governed intelligence backbone that all six institutions access simultaneously, each within the boundary of their legal authority.
+Rwanda operates with a network of six distinct security and law enforcement institutions — the Rwanda National Police (RNP), the Rwanda Investigation Bureau (RIB), the Rwanda Defence Force (RDF), the National Intelligence and Security Service (NISS), the Rwanda Correctional Service (RCS), and community-level forces (Irondo and Dasso). Historically, each institution maintained its own isolated records. IMS v3.0 replaces that siloed approach with a single, role-governed intelligence backbone that all six institutions access simultaneously, each within the boundary of their legal authority.
 
 The system introduces three major capabilities in version 3.0:
 
@@ -40,7 +40,7 @@ This guide explains what the system solves, how it is structured, who uses it an
 
 ## 2. Problem Statement
 
-Before RCIMS v3.0, Rwanda's security institutions faced a set of interconnected operational problems that reduced their collective effectiveness in preventing and responding to crime:
+Before IMS v3.0, Rwanda's security institutions faced a set of interconnected operational problems that reduced their collective effectiveness in preventing and responding to crime:
 
 ### 2.1 Siloed Intelligence
 Each institution (RNP, RIB, RDF, RCS, NISS) maintained its own records in separate, non-communicating systems. A suspect arrested by RDF at a border post might be unknown to RNP officers at an urban checkpoint. Intelligence gathered by RIB during an investigation was invisible to RDF border officers who might encounter the same suspect crossing into Rwanda from the DRC.
@@ -60,7 +60,7 @@ There was no automated mechanism to detect anomalous activity patterns — such 
 ### 2.6 Manual International Notice Handling
 Interpol Red Notices and alerts from partner countries (Uganda, Kenya, DR Congo) were received manually and entered into separate logs. No automated linkage existed between an Interpol notice and the IMS suspect database.
 
-RCIMS v3.0 directly addresses all six of these problems through an integrated architecture described in this document.
+IMS v3.0 directly addresses all six of these problems through an integrated architecture described in this document.
 
 ---
 
@@ -135,7 +135,7 @@ Create a permanent, tamper-proof log of every data access, authentication event,
 
 ### 5.1 System Overview
 
-RCIMS v3.0 consists of five interconnected layers:
+IMS v3.0 consists of five interconnected layers:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -384,7 +384,7 @@ When a user logs in, the system reads the `role` claim from their JWT and routes
 
 ### 7.1 Development Methodology
 
-RCIMS v3.0 follows **Agile Scrum** with security-first design principles integrated into every sprint.
+IMS v3.0 follows **Agile Scrum** with security-first design principles integrated into every sprint.
 
 **Sprint structure:**
 - 2-week sprints
@@ -660,7 +660,7 @@ python node_agent.py --node-id GTN-BORDER-01 --server https://ims.internal
 ### 11.3 Directory Structure
 
 ```
-RCIMS/
+IMS/
 ├── database/
 │   ├── schema.sql              # Full PostgreSQL schema
 │   ├── rls_policies.sql        # Row Level Security policies
@@ -701,7 +701,7 @@ RCIMS/
 
 ## 12. IoT-Based Predictive and Reactive Intelligence
 
-This section describes the Internet of Things (IoT) layer of RCIMS v3.0 — the physical sensor network, the data pipelines it feeds, the predictive models that use that data to anticipate crimes before they happen, and the reactive forensic tools that help investigators locate and identify perpetrators after crimes are committed.
+This section describes the Internet of Things (IoT) layer of IMS v3.0 — the physical sensor network, the data pipelines it feeds, the predictive models that use that data to anticipate crimes before they happen, and the reactive forensic tools that help investigators locate and identify perpetrators after crimes are committed.
 
 The IoT intelligence layer is built on a single principle: **passive, continuous environmental observation feeds active, targeted human response**. Officers are not replaced by sensors — they are directed more precisely by them.
 
@@ -762,7 +762,7 @@ When a crime is reported at or near a camera node's coverage zone, the node's ti
 - After a crime (robbery, hit-and-run, kidnapping), investigators query the ANPR network with a vehicle description or partial plate. The system returns every match across all cameras in the time window, with direction of travel, reconstructing the vehicle's route through Rwanda
 - Even partial plates (e.g., 3 of 5 characters visible on a witness's phone video) are matched using fuzzy plate matching (Levenshtein distance ≤ 1 character)
 
-**How it connects to RCIMS:**
+**How it connects to IMS:**
 ANPR events are stored as `intelligence_events` with `source_tag = CCTV_NODE` and a `vehicle_plate` field. The vehicle watchlist is a table in the IMS database managed by NISS and RNP.
 
 **Hardware:** Dedicated ANPR cameras (e.g., Hikvision DS-2CD7A26G0/P-IZHS or similar), with dual IR illuminators for night reading. On-device OCR using EasyOCR (already implemented in `edge/utils/anpr.py`) running on a Pi 4 co-processor.
@@ -771,12 +771,12 @@ ANPR events are stored as `intelligence_events` with `source_tag = CCTV_NODE` an
 
 #### 12.2.3 Acoustic Gunshot Detection Sensors
 
-**What it is:** IoT microphone arrays installed on streetlights, building rooftops, and border fence posts that listen continuously for the acoustic signature of gunshots, explosions, or glass-breaking. When a match is detected, the sensor transmits the event with GPS coordinates and timestamp to RCIMS within 1–3 seconds — faster than any human witness report.
+**What it is:** IoT microphone arrays installed on streetlights, building rooftops, and border fence posts that listen continuously for the acoustic signature of gunshots, explosions, or glass-breaking. When a match is detected, the sensor transmits the event with GPS coordinates and timestamp to IMS within 1–3 seconds — faster than any human witness report.
 
 **How it works:**
 1. Each sensor unit contains a microphone array, embedded DSP (Digital Signal Processor), and LTE/4G modem.
 2. The DSP continuously runs a lightweight classification model trained on gunshot, explosion, and glass-break audio signatures. Processing happens on-device — no raw audio is transmitted or stored.
-3. When a signature match exceeds the confidence threshold (≥ 0.85), the sensor sends a JSON event payload to the RCIMS backend with: `sensor_id`, `event_type` (GUNSHOT / EXPLOSION / GLASS_BREAK), `confidence`, `gps_lat`, `gps_lng`, `timestamp_utc`.
+3. When a signature match exceeds the confidence threshold (≥ 0.85), the sensor sends a JSON event payload to the IMS backend with: `sensor_id`, `event_type` (GUNSHOT / EXPLOSION / GLASS_BREAK), `confidence`, `gps_lat`, `gps_lng`, `timestamp_utc`.
 4. The backend creates an `intelligence_event` with `source_tag = SYSTEM_ALERT`, severity `CRITICAL`, and triggers immediate alerts to the nearest RNP patrol unit and the NISS Command Center.
 5. Because multiple sensors may detect the same event, a **triangulation engine** in the backend compares timestamps across nearby sensors and estimates the exact origin point of the sound (within 5–15 metre accuracy).
 
@@ -807,11 +807,11 @@ The moment a gunshot is detected, the system immediately pulls all face recognit
 **How it works:**
 1. Each sensor communicates over LoRaWAN (Long Range Wide Area Network) — a low-power wireless protocol ideal for remote, power-constrained environments. A LoRaWAN gateway at each border post covers a 10–15 km radius.
 2. When a PIR + seismic sensor combination triggers simultaneously in the same zone (discriminating humans from wildlife with >90% accuracy), the covert camera fires and captures a photo.
-3. If the photo contains a face, the Pi Zero node runs ArcFace embedding locally and transmits the embedding (not the photo) to RCIMS for matching.
+3. If the photo contains a face, the Pi Zero node runs ArcFace embedding locally and transmits the embedding (not the photo) to IMS for matching.
 4. RDF border officers receive an alert on their mobile dashboard showing: sensor zone, time, confidence that the motion is human, and face match result if available.
 
 **Predictive role:**
-- Recurring crossing patterns at specific sensor zones at specific times indicate a regular smuggling route. RCIMS flags these as `HIGH_RISK_CORRIDOR` zones and schedules targeted RDF patrols.
+- Recurring crossing patterns at specific sensor zones at specific times indicate a regular smuggling route. IMS flags these as `HIGH_RISK_CORRIDOR` zones and schedules targeted RDF patrols.
 - Sensor activity that increases steadily over days before a known criminal operation is a pre-crime signal used to pre-position RDF units.
 
 **Reactive role:**
@@ -834,8 +834,8 @@ Based on the predictive hotspot model (Section 12.3), high-risk zones receive sc
 **Mode 3 — Pursuit Support:**
 When a suspect flees on foot or by vehicle after a crime, an operator can manually task a drone to follow from the air. The drone streams GPS-tagged video to the RNP dashboard, and the system automatically creates a real-time location trail in the `location_records` table for any suspect the video confirms.
 
-**How it connects to RCIMS:**
-Drones communicate with the RCIMS backend over an encrypted 4G/LTE link. Video is processed on-drone (NVIDIA Jetson Nano co-processor) for face and plate detection; only detection events and embeddings are transmitted to the backend — not raw video. Raw video is stored locally on the drone's SD card and erased after 72 hours unless flagged for investigation.
+**How it connects to IMS:**
+Drones communicate with the IMS backend over an encrypted 4G/LTE link. Video is processed on-drone (NVIDIA Jetson Nano co-processor) for face and plate detection; only detection events and embeddings are transmitted to the backend — not raw video. Raw video is stored locally on the drone's SD card and erased after 72 hours unless flagged for investigation.
 
 **Hardware:** Medium-range quadcopter (e.g., DJI Matrice 300 RTK or locally sourced equivalent), thermal camera for night operations, NVIDIA Jetson Nano for edge inference, 45-min flight time, 15 km range.
 
@@ -843,7 +843,7 @@ Drones communicate with the RCIMS backend over an encrypted 4G/LTE link. Video i
 
 #### 12.2.6 Smart Gate and RFID Readers (Correctional Facilities)
 
-**What it is:** Electronic gates at RCS correctional facility entry and exit points fitted with RFID readers. Every inmate is issued a wristband with an embedded RFID chip. Every authorized visitor is issued a temporary RFID card. Every movement through every gate is logged to RCIMS in real time.
+**What it is:** Electronic gates at RCS correctional facility entry and exit points fitted with RFID readers. Every inmate is issued a wristband with an embedded RFID chip. Every authorized visitor is issued a temporary RFID card. Every movement through every gate is logged to IMS in real time.
 
 **How it works:**
 1. Each gate swipe creates an `intelligence_event` with `source_tag = SYSTEM_ALERT` and event type `INMATE_MOVEMENT` or `VISITOR_ENTRY/EXIT`.
@@ -947,7 +947,7 @@ When a crime is reported, the system enters **forensic reconstruction mode** —
 
 #### Step 1 — Spatial Boundary Definition
 
-The investigator enters the crime location and time in the RCIMS web dashboard. The system automatically defines a **search radius** (default 1 km, configurable) and a **time window** (default: from 2 hours before the crime to 1 hour after).
+The investigator enters the crime location and time in the IMS web dashboard. The system automatically defines a **search radius** (default 1 km, configurable) and a **time window** (default: from 2 hours before the crime to 1 hour after).
 
 #### Step 2 — Multi-Source Evidence Aggregation
 
@@ -999,7 +999,7 @@ Based on the last known ANPR read (20:03, heading north on Kimironko Road), the 
 
 #### Step 5 — Investigator Report Package
 
-The full timeline, face detection crops (not stored — queried live from node buffer), ANPR images, and acoustic triangulation map are packaged into an **evidence report** attached to the case file in RCIMS. Every item in the report carries its `source_tag`, confidence score, and the GPS coordinates of the detecting device — making all evidence court-admissible with clear chain of custody.
+The full timeline, face detection crops (not stored — queried live from node buffer), ANPR images, and acoustic triangulation map are packaged into an **evidence report** attached to the case file in IMS. Every item in the report carries its `source_tag`, confidence score, and the GPS coordinates of the detecting device — making all evidence court-admissible with clear chain of custody.
 
 ---
 
@@ -1046,7 +1046,7 @@ Predictive Engine               Redis → WebSocket → Dashboard
 
 ### 12.6 IoT-Specific Database Tables
 
-The following tables extend the core RCIMS schema to support IoT intelligence:
+The following tables extend the core IMS schema to support IoT intelligence:
 
 | Table | Purpose |
 |---|---|
@@ -1090,7 +1090,7 @@ Crime occurs → Reported by witness → Officers dispatched → Investigation b
 Typical time to first lead: hours to days
 Typical scene coverage: limited to what witnesses remember
 
-WITH IoT (RCIMS v3.0 IoT layer):
+WITH IoT (IMS v3.0 IoT layer):
 Pre-crime signal detected → Officers pre-positioned → Crime deterred OR
 Crime occurs → Acoustic sensor fires within 3 seconds → Forensic package assembled within 30 seconds
 Officers arrive with: suspect face matches, vehicle plates, movement direction, suspect network
@@ -1102,7 +1102,7 @@ The combination of predictive positioning (officers where crime is about to happ
 
 ---
 
-*This document serves as the primary reference guide for the RCIMS v3.0 project. All sample credentials, suspect names, case references, and national ID numbers in this document and in the seed database are entirely fictional and created solely for development and testing purposes. No real citizen data is used at any stage of this project.*
+*This document serves as the primary reference guide for the IMS v3.0 project. All sample credentials, suspect names, case references, and national ID numbers in this document and in the seed database are entirely fictional and created solely for development and testing purposes. No real citizen data is used at any stage of this project.*
 
 ---
 
