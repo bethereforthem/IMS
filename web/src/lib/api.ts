@@ -100,6 +100,42 @@ export const intelligenceApi = {
     api.get<{ events: IntelligenceEvent[]; total: number }>('/intelligence/events', { params }),
   getEvent: (id: string) => api.get<IntelligenceEvent>(`/intelligence/events/${id}`),
   acknowledgeAlert: (alertId: string) => api.patch(`/alerts/${alertId}/read`),
+  getVillageEvents: (limit = 30) =>
+    api.get<{ events: IntelligenceEvent[]; total: number }>(
+      `/intelligence/events?institution=VILLAGE_LEADER&criminal_record_found=true&limit=${limit}`
+    ).then(r => ({ ...r, data: r.data?.events ?? [] as IntelligenceEvent[] })),
+
+  getAlertEvents: (windowHours = 24, limit = 100) => {
+    const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString()
+    return api.get<{ events: IntelligenceEvent[]; total: number }>(
+      `/intelligence/events?alert_generated=true&has_location=true&since=${encodeURIComponent(since)}&limit=${limit}`
+    ).then(r => ({ ...r, data: r.data?.events ?? [] as IntelligenceEvent[] }))
+  },
+}
+
+// ─── Patrol (Village Leader) ──────────────────────────────────────────────────
+
+export const patrolApi = {
+  checkNid: (nid: string, location?: { lat: number; lng: number; description?: string }) =>
+    api.post<{
+      found: boolean
+      classification?: { status: string; threat_level: number; owning_institution: string }
+    }>('/patrol/check', {
+      nid,
+      location_lat: location?.lat ?? null,
+      location_lng: location?.lng ?? null,
+      location_description: location?.description ?? null,
+    }),
+
+  submitReport: (data: {
+    person_name?: string
+    description: string
+    insecurity_type: string
+    location_lat?: number | null
+    location_lng?: number | null
+    location_description?: string
+    file_urls?: string[]
+  }) => api.post<Record<string, unknown>>('/patrol/report', data),
 }
 
 // ─── Location (TOP SECRET — role-gated by RLS on server) ─────────────────────
@@ -154,6 +190,8 @@ export const alertsApi = {
   list: (params?: { severity?: string; is_read?: boolean; requires_action?: boolean; limit?: number }) =>
     api.get<{ alerts: Alert[]; total: number }>('/alerts', { params }),
   markRead: (alertId: string) => api.patch(`/alerts/${alertId}/read`),
+  share: (alertId: string, body: { target_institution: string; instructions: string }) =>
+    api.post<{ shared_alert_id: string; target: string }>(`/alerts/${alertId}/share`, body),
 }
 
 // ─── Warrants ─────────────────────────────────────────────────────────────────
