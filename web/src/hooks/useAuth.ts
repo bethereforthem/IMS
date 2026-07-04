@@ -102,8 +102,7 @@ export function institutionColor(institution: Institution): string {
     RIB:    'rib',
     RDF:    'rdf',
     RCS:    'rcs',
-    IRONDO: 'patrol',
-    DASSO:  'patrol',
+    VILLAGE_LEADER: 'patrol',
     SYSTEM: 'brand',
   }
   return map[institution] ?? 'brand'
@@ -115,6 +114,6 @@ export function dashboardRoute(role: UserRole): string {
   if (role.startsWith('RIB')) return '/rib'
   if (role.startsWith('RDF')) return '/rdf'
   if (role.startsWith('RCS')) return '/rcs'
-  if (role === 'IRONDO_PATROL' || role === 'DASSO_OFFICER') return '/patrol'
+  if (role === 'VILLAGE_LEADER') return '/patrol'
   return '/login'
 }
