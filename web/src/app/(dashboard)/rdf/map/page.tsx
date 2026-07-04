@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
-import { cameraApi, locationApi } from '@/lib/api'
-import { Wifi, WifiOff, Radio, MapPin, AlertTriangle } from 'lucide-react'
-import { StatCard } from '@/components/shared/StatCard'
+import { cameraApi, statsApi, intelligenceApi } from '@/lib/api'
+import { Wifi, WifiOff, Radio, AlertTriangle, Bell } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { StatCard } from '@/components/shared/StatCard'
 import clsx from 'clsx'
-import type { CameraNode, LocationRecord } from '@/types'
+import type { CameraNode, IntelligenceEvent } from '@/types'
 
 const BORDER_POSTS = [
   { name: 'Gatuna',       country: 'Uganda',         code: 'GTN', prefix: 'GTN-',        lat: -1.7018, lng: 29.7350 },
@@ -30,22 +30,37 @@ const BorderMap = dynamic(() => import('./_BorderMap'), { ssr: false, loading: (
 
 export default function RDFMapPage() {
   const { user } = useAuth()
-  const [rdfCameras,    setRdfCameras]    = useState<CameraNode[]>([])
-  const [locations,     setLocations]     = useState<LocationRecord[]>([])
-  const [showCameras,   setShowCameras]   = useState(true)
-  const [showDetections, setShowDetections] = useState(true)
+  const [rdfCameras,   setRdfCameras]   = useState<CameraNode[]>([])
+  const [events,       setEvents]       = useState<IntelligenceEvent[]>([])
+  const [alertEvents,  setAlertEvents]  = useState<IntelligenceEvent[]>([])
+  const [alertSyncedAt, setAlertSyncedAt] = useState<Date | null>(null)
 
   useEffect(() => {
     cameraApi.list().then(r => {
       if (r.data?.length) setRdfCameras(r.data.filter((c: CameraNode) => c.institution === 'RDF'))
     }).catch(() => {})
-    locationApi.getRecentLocations().then(r => {
-      if (r.data?.length) setLocations(r.data)
+    statsApi.getRecentEvents(50).then(r => {
+      if (r.data?.length) setEvents(r.data.filter((e: IntelligenceEvent) => e.source_tag === 'CCTV_NODE'))
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const fetchAlerts = () => {
+      intelligenceApi.getAlertEvents(24).then(r => {
+        if (Array.isArray(r.data)) {
+          setAlertEvents(r.data as IntelligenceEvent[])
+          setAlertSyncedAt(new Date())
+        }
+      }).catch(() => {})
+    }
+    fetchAlerts()
+    const id = setInterval(fetchAlerts, 15_000)
+    return () => clearInterval(id)
   }, [])
 
   const onlineCount  = rdfCameras.filter(c => c.is_active).length
   const offlineCount = rdfCameras.filter(c => !c.is_active).length
+  const cctvEvents   = events
 
   return (
     <div className="space-y-6">
@@ -61,46 +76,28 @@ export default function RDFMapPage() {
         </div>
       </div>
 
-      {/* Map controls */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <span className="text-xs text-slate-500 font-medium">Show:</span>
-        <label className="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={showCameras}
-            onChange={e => setShowCameras(e.target.checked)}
-            className="accent-green-500 h-3.5 w-3.5"
-          />
-          <span className="flex items-center gap-1.5 text-xs text-slate-300 group-hover:text-white transition-colors">
-            <span className="inline-block h-3 w-3 rounded-full bg-green-500 shrink-0" />
-            Camera Nodes
-          </span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={showDetections}
-            onChange={e => setShowDetections(e.target.checked)}
-            className="accent-orange-500 h-3.5 w-3.5"
-          />
-          <span className="flex items-center gap-1.5 text-xs text-slate-300 group-hover:text-white transition-colors">
-            <span className="inline-block h-3 w-3 rounded-full bg-orange-500 shrink-0" />
-            Detection Events
-          </span>
-        </label>
-        <span className="ml-auto text-xs text-slate-600">
-          {rdfCameras.length} cameras · {locations.length} events
-        </span>
+      {/* Live feed status bar */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-2">
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span className="font-medium text-slate-400">{rdfCameras.length} cameras · {events.length} detections</span>
+          <span>— use the layer panel inside the map (top-right) to switch base maps and toggle overlays</span>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <Bell className="h-3 w-3 text-red-400" />
+            <span className="text-red-400 font-bold">{alertEvents.length}</span>
+            <span className="text-slate-500">alert signal{alertEvents.length !== 1 ? 's' : ''} · last 24 h</span>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-slate-500">
+            <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+            {alertSyncedAt ? `synced ${formatDistanceToNow(alertSyncedAt, { addSuffix: true })}` : 'syncing…'}
+          </div>
+        </div>
       </div>
 
       {/* Map */}
       <div className="rounded-xl overflow-hidden border border-rdf/20">
-        <BorderMap
-          cameras={rdfCameras}
-          locations={locations}
-          showCameras={showCameras}
-          showDetections={showDetections}
-        />
+        <BorderMap cameras={rdfCameras} events={events} alertEvents={alertEvents} />
       </div>
 
       {/* Legend */}
