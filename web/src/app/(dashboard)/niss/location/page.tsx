@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { locationApi } from '@/lib/api'
+import { locationApi, intelligenceApi } from '@/lib/api'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { StatCard } from '@/components/shared/StatCard'
 import { formatDistanceToNow } from 'date-fns'
-import { MapPin, Camera, AlertTriangle, X, Send, RefreshCw, Radio, Users } from 'lucide-react'
+import { MapPin, Camera, AlertTriangle, X, Send, RefreshCw, Radio, Users, Bell } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import type { LocationRecord } from '@/types'
+import type { LocationRecord, IntelligenceEvent } from '@/types'
 import type { FieldAgent } from './_LocationMap'
 
 // Dynamic import — prevents Leaflet SSR crash
@@ -51,11 +51,13 @@ interface DirectPanel {
 
 export default function NISSLocationPage() {
   const { user } = useAuth()
-  const [locations,    setLocations]    = useState<LocationRecord[]>([])
-  const [agents]                        = useState<FieldAgent[]>(FIELD_AGENTS)
-  const [direction,    setDirection]    = useState<DirectPanel | null>(null)
-  const [lastRefresh,  setLastRefresh]  = useState(new Date())
-  const [refreshing,   setRefreshing]   = useState(false)
+  const [locations,     setLocations]     = useState<LocationRecord[]>([])
+  const [agents]                          = useState<FieldAgent[]>(FIELD_AGENTS)
+  const [alertEvents,   setAlertEvents]   = useState<IntelligenceEvent[]>([])
+  const [alertSyncedAt, setAlertSyncedAt] = useState<Date | null>(null)
+  const [direction,     setDirection]     = useState<DirectPanel | null>(null)
+  const [lastRefresh,   setLastRefresh]   = useState(new Date())
+  const [refreshing,    setRefreshing]    = useState(false)
 
   const fetchLocations = useCallback(async () => {
     setRefreshing(true)
@@ -74,6 +76,20 @@ export default function NISSLocationPage() {
     const id = setInterval(fetchLocations, 30_000)
     return () => clearInterval(id)
   }, [fetchLocations])
+
+  useEffect(() => {
+    const fetchAlerts = () => {
+      intelligenceApi.getAlertEvents(24).then(r => {
+        if (Array.isArray(r.data)) {
+          setAlertEvents(r.data as IntelligenceEvent[])
+          setAlertSyncedAt(new Date())
+        }
+      }).catch(() => {})
+    }
+    fetchAlerts()
+    const id = setInterval(fetchAlerts, 15_000)
+    return () => clearInterval(id)
+  }, [])
 
   const sosAgents    = agents.filter(a => a.status === 'SOS')
   const activeAgents = agents.filter(a => a.status === 'ACTIVE')
@@ -132,6 +148,22 @@ export default function NISSLocationPage() {
         <StatCard label="SOS Active"      value={sosAgents.length}    icon={AlertTriangle} variant={sosAgents.length > 0 ? 'danger' : 'default'} />
       </div>
 
+      {/* ── Live alert feed bar ──────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-2">
+        <span className="text-[10px] text-slate-500">Alert signals shown for last 24 h · map auto-refreshes every 15 s</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <Bell className="h-3 w-3 text-red-400" />
+            <span className="text-red-400 font-bold">{alertEvents.length}</span>
+            <span className="text-slate-500">live alert{alertEvents.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] text-slate-500">
+            <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+            {alertSyncedAt ? `synced ${formatDistanceToNow(alertSyncedAt, { addSuffix: true })}` : 'syncing…'}
+          </div>
+        </div>
+      </div>
+
       {/* ── Map + agent panel ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
 
@@ -143,6 +175,7 @@ export default function NISSLocationPage() {
           <LocationMap
             locations={locations}
             agents={agents}
+            alertEvents={alertEvents}
             onDirectAgent={(agent) => setDirection({ agent, message: '', sent: false })}
           />
         </div>
