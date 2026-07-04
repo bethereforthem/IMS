@@ -13,10 +13,8 @@ INSERT INTO institutions (code, name, description) VALUES
    'Apex institution. Highest clearance. Sole authority to classify/declassify and manage international cooperation.'),
   ('RCS',           'Rwanda Correctional Service',
    'Manages convicted persons. Full criminal lifecycle from arrest through release.'),
-  ('IRONDO',        'Irondo ry''Umwuga',
-   'Community patrol. Watchlist and incident reporting. Limited DIV app access.'),
-  ('DASSO',         'Dasso',
-   'Local administrative security. GPS-tagged incident reports and zone watchlist alerts.'),
+  ('VILLAGE_LEADER', 'Village Leader',
+   'Community intelligence reporting. Receives insecurity reports from community members and submits them to the intelligence system.'),
   ('INTERNATIONAL', 'International Partners',
    'Foreign law enforcement partners with MOU-governed query access.')
 ON CONFLICT (code) DO NOTHING;
