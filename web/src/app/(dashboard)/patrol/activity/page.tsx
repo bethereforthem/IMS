@@ -14,7 +14,7 @@ import clsx from 'clsx'
 
 export default function PatrolActivityPage() {
   const { user } = useAuth()
-  const roleLabel = user?.role === 'IRONDO_PATROL' ? 'Irondo Patrol' : 'Dasso Officer'
+  const roleLabel = 'Village Leader'
   const [events, setEvents] = useState<IntelligenceEvent[]>([])
 
   useEffect(() => {
