@@ -1,5 +1,5 @@
 export type Institution =
-  | 'NISS' | 'RNP' | 'RIB' | 'RDF' | 'RCS' | 'IRONDO' | 'DASSO' | 'SYSTEM'
+  | 'NISS' | 'RNP' | 'RIB' | 'RDF' | 'RCS' | 'VILLAGE_LEADER' | 'SYSTEM'
 
 export type UserRole =
   | 'NISS_DIRECTOR' | 'NISS_OFFICER' | 'SIEM_ANALYST'
@@ -7,7 +7,7 @@ export type UserRole =
   | 'RIB_INVESTIGATOR' | 'RIB_ANALYST'
   | 'RDF_COMMANDER' | 'RDF_BORDER_OFFICER'
   | 'RCS_SUPERINTENDENT' | 'RCS_OFFICER'
-  | 'IRONDO_PATROL' | 'DASSO_OFFICER'
+  | 'VILLAGE_LEADER'
   | 'SYSTEM_ADMIN'
 
 export type ClearanceLevel = 'TOP_SECRET' | 'SECRET' | 'CONFIDENTIAL' | 'UNCLASSIFIED'
@@ -63,6 +63,10 @@ export interface IntelligenceEvent {
   source_tag: SourceTag
   suspect_id?: string
   suspect_name?: string
+  suspect_status?: string
+  suspect_threat_level?: number
+  suspect_ims_reference?: string
+  institution?: string
   ims_reference?: string
   reporting_officer_id?: string
   camera_node_id?: string
@@ -87,6 +91,7 @@ export interface Alert {
   event_id?: string
   is_read: boolean
   requires_action: boolean
+  target_institutions?: string[] | null
   created_at: string
 }
 
