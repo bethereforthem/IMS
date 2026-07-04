@@ -3,16 +3,17 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { DashboardShell, NavItem } from '@/components/shared/DashboardShell'
-import { LayoutDashboard, Search, AlertTriangle, Activity } from 'lucide-react'
+import { LayoutDashboard, Search, AlertTriangle, Activity, UserX } from 'lucide-react'
 
 const nav: NavItem[] = [
-  { label: 'Patrol Dashboard', href: '/patrol',              icon: LayoutDashboard },
-  { label: 'NID / Face Check', href: '/patrol/check',        icon: Search },
-  { label: 'Alerts',           href: '/patrol/alerts',       icon: AlertTriangle },
-  { label: 'My Activity',      href: '/patrol/activity',     icon: Activity },
+  { label: 'Dashboard',        href: '/patrol',          icon: LayoutDashboard },
+  { label: 'NID / Face Check', href: '/patrol/check',    icon: Search },
+  { label: 'Report Person',    href: '/patrol/report',   icon: UserX },
+  { label: 'Alerts',           href: '/patrol/alerts',   icon: AlertTriangle },
+  { label: 'My Reports',       href: '/patrol/activity', icon: Activity },
 ]
 
-const ALLOWED_ROLES = ['IRONDO_PATROL','DASSO_OFFICER']
+const ALLOWED_ROLES = ['VILLAGE_LEADER']
 
 export default function PatrolLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -26,10 +27,8 @@ export default function PatrolLayout({ children }: { children: React.ReactNode }
 
   if (loading || !user) return null
 
-  const label = user.role === 'IRONDO_PATROL' ? 'Irondo — Community Patrol' : 'Dasso — Local Security'
-
   return (
-    <DashboardShell nav={nav} institutionLabel={label}>
+    <DashboardShell nav={nav} institutionLabel="Village Leader Portal">
       {children}
     </DashboardShell>
   )
