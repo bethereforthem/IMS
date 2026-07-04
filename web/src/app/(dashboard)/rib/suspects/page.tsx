@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { suspectsApi } from '@/lib/api'
@@ -172,9 +172,8 @@ export default function RIBSuspectsPage() {
               </tr>
             )}
             {filtered.map(s => (
-              <>
+              <React.Fragment key={s.id}>
                 <tr
-                  key={s.id}
                   onClick={() => toggleRow(s.id)}
                   className="border-b border-slate-800/50 text-xs hover:bg-slate-800/20 cursor-pointer select-none"
                 >
@@ -214,7 +213,7 @@ export default function RIBSuspectsPage() {
                   </td>
                 </tr>
                 {expanded === s.id && <DetailRow key={`${s.id}-detail`} suspect={s} />}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
