@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "IMS Rwanda",
+    "slug": "ims-rwanda",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "ims",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#0f172a",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "rw.gov.ims",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "IMS needs your location to attach GPS coordinates to intelligence reports and emergency SOS alerts.",
+        "NSLocationAlwaysUsageDescription": "IMS needs your location for emergency SOS alerts.",
+        "NSCameraUsageDescription": "IMS uses the camera for NID card scanning."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "package": "rw.gov.ims",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "IMS needs your location for intelligence reports and emergency SOS alerts."
+        }
+      ],
+      "expo-secure-store",
+      "expo-camera"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
