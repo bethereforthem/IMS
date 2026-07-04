@@ -53,6 +53,11 @@ export default function CorrectionsPage() {
       : '—'
 
   const upcomingReviews = records
+    .filter((r: Record<string, unknown>) => {
+      if (!r.next_review) return false
+      const d = new Date(r.next_review as string)
+      return !isNaN(d.getTime())
+    })
     .map((r: Record<string, unknown>) => ({ ...r, daysUntil: differenceInDays(new Date(r.next_review as string), TODAY) }))
     .filter(r => r.daysUntil <= 14)
     .sort((a, b) => a.daysUntil - b.daysUntil)
@@ -102,8 +107,12 @@ export default function CorrectionsPage() {
           </thead>
           <tbody>
             {records.map((r: Record<string, unknown>) => {
-              const daysUntil = differenceInDays(new Date(r.next_review as string), TODAY)
-              const reviewSoon = daysUntil <= 14
+              const reviewDate  = r.next_review ? new Date(r.next_review as string) : null
+              const intakeDate  = r.intake_date ? new Date(r.intake_date as string)  : null
+              const validReview = reviewDate && !isNaN(reviewDate.getTime())
+              const validIntake = intakeDate && !isNaN(intakeDate.getTime())
+              const daysUntil   = validReview ? differenceInDays(reviewDate!, TODAY) : null
+              const reviewSoon  = daysUntil !== null && daysUntil <= 14
               return (
                 <tr key={r.id as string} className="border-b border-slate-800/50 text-xs hover:bg-slate-800/20">
                   <td className="py-2.5 pr-4 font-mono text-rcs">{r.ims_reference as string}</td>
@@ -111,7 +120,7 @@ export default function CorrectionsPage() {
                   <td className="py-2.5 pr-4 text-slate-300">{r.facility as string}</td>
                   <td className="py-2.5 pr-4 text-slate-400">{r.cell_block as string}</td>
                   <td className="py-2.5 pr-4 text-slate-300">
-                    {format(new Date(r.intake_date as string), 'MMM dd, yyyy')}
+                    {validIntake ? format(intakeDate!, 'MMM dd, yyyy') : '—'}
                   </td>
                   <td className="py-2.5 pr-4">
                     <span
@@ -130,10 +139,10 @@ export default function CorrectionsPage() {
                   </td>
                   <td className="py-2.5 pr-4">{threatDots(r.threat_level as number)}</td>
                   <td className={clsx('py-2.5 pr-4 font-medium', reviewSoon ? 'text-amber-400' : 'text-slate-300')}>
-                    {format(new Date(r.next_review as string), 'MMM dd, yyyy')}
+                    {validReview ? format(reviewDate!, 'MMM dd, yyyy') : '—'}
                   </td>
-                  <td className={clsx('py-2.5 font-medium', daysUntil <= 7 ? 'text-amber-400' : reviewSoon ? 'text-amber-300/70' : 'text-slate-400')}>
-                    {daysUntil}d
+                  <td className={clsx('py-2.5 font-medium', daysUntil !== null && daysUntil <= 7 ? 'text-amber-400' : reviewSoon ? 'text-amber-300/70' : 'text-slate-400')}>
+                    {daysUntil !== null ? `${daysUntil}d` : '—'}
                   </td>
                 </tr>
               )
