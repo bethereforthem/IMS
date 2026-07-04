@@ -12,13 +12,18 @@
 --              so this script can be safely re-executed without duplication.
 --
 -- INSTITUTIONS COVERED:
---   NISS  — National Intelligence and Security Service
---   RNP   — Rwanda National Police
---   RIB   — Rwanda Investigation Bureau
---   RDF   — Rwanda Defence Force
---   RCS   — Rwanda Correctional Service
---   IRONDO — Community Patrol
---   DASSO  — Local Security
+--   NISS           — National Intelligence and Security Service
+--   RNP            — Rwanda National Police
+--   RIB            — Rwanda Investigation Bureau
+--   RDF            — Rwanda Defence Force
+--   RCS            — Rwanda Correctional Service
+--   VILLAGE_LEADER — Community intelligence reporting (village leaders)
+--
+-- RE-RUNNABLE ON EXISTING DATABASES:
+--   If you already ran the old migration with IRONDO/DASSO, this script will:
+--   1. Add VILLAGE_LEADER to the enums (ALTER TYPE … ADD VALUE IF NOT EXISTS)
+--   2. Migrate existing IRONDO/DASSO users to VILLAGE_LEADER
+--   3. Skip inserts that already exist (ON CONFLICT DO NOTHING)
 -- ============================================================================
 
 
@@ -40,9 +45,14 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 DO $$ BEGIN
   CREATE TYPE public.institution_type AS ENUM (
-    'RNP', 'RIB', 'RDF', 'NISS', 'RCS', 'IRONDO', 'DASSO', 'INTERNATIONAL'
+    'RNP', 'RIB', 'RDF', 'NISS', 'RCS', 'VILLAGE_LEADER', 'INTERNATIONAL'
   );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- For existing databases that have IRONDO/DASSO: add VILLAGE_LEADER without error
+ALTER TYPE public.institution_type ADD VALUE IF NOT EXISTS 'VILLAGE_LEADER';
+-- COMMIT required: new enum values cannot be used in the same transaction they are added
+COMMIT;
 
 DO $$ BEGIN
   CREATE TYPE public.user_role AS ENUM (
@@ -51,10 +61,14 @@ DO $$ BEGIN
     'RIB_INVESTIGATOR', 'RIB_ANALYST',
     'RDF_COMMANDER', 'RDF_BORDER_OFFICER',
     'RCS_SUPERINTENDENT', 'RCS_OFFICER',
-    'IRONDO_PATROL', 'DASSO_OFFICER',
+    'VILLAGE_LEADER',
     'SYSTEM_ADMIN', 'SIEM_ANALYST'
   );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- For existing databases that have IRONDO_PATROL/DASSO_OFFICER: add VILLAGE_LEADER without error
+ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'VILLAGE_LEADER';
+COMMIT;
 
 DO $$ BEGIN
   CREATE TYPE public.clearance_level AS ENUM (
@@ -93,6 +107,34 @@ DO $$ BEGIN
     'PRE_TRIAL', 'SENTENCED', 'TRANSFERRED', 'RELEASED', 'ESCAPED', 'DECEASED'
   );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.nid_method AS ENUM ('NID_SCAN', 'NID_MANUAL');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.crime_category AS ENUM (
+    'HOMICIDE', 'ROBBERY', 'FRAUD', 'CYBERCRIME', 'TERRORISM',
+    'ORGANIZED_CRIME', 'TRAFFICKING', 'CORRUPTION', 'SEXUAL_OFFENSE',
+    'DRUG_OFFENSE', 'BORDER_VIOLATION', 'OTHER'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.interpol_notice_color AS ENUM (
+    'RED', 'ORANGE', 'BLUE', 'GREEN', 'YELLOW', 'BLACK', 'PURPLE', 'INTERPOL_DIFFUSION'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE public.revocation_scope AS ENUM (
+    'USER', 'GROUP', 'INSTITUTION', 'SERVICE', 'CAMERA_NODE', 'INTERNATIONAL_PARTNER'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Upgrade suspect_status: add CLEARED value (schema.sql feature)
+ALTER TYPE public.suspect_status ADD VALUE IF NOT EXISTS 'CLEARED';
+COMMIT;
 
 
 -- ============================================================================
@@ -459,6 +501,149 @@ CREATE TABLE IF NOT EXISTS public.international_partners (
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Upgrade international_partners: additional columns from schema.sql
+ALTER TABLE public.international_partners ADD COLUMN IF NOT EXISTS api_key_hash  VARCHAR(64);
+ALTER TABLE public.international_partners ADD COLUMN IF NOT EXISTS tls_cert_hash VARCHAR(64);
+ALTER TABLE public.international_partners ADD COLUMN IF NOT EXISTS revoked        BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE public.international_partners ADD COLUMN IF NOT EXISTS revoked_at     TIMESTAMPTZ;
+
+
+-- ============================================================================
+-- SECTION 3p: COLUMN UPGRADES FOR EXISTING TABLES
+-- Adds columns present in schema.sql but missing from the original migration.
+-- All use ADD COLUMN IF NOT EXISTS — safe to re-run.
+-- ============================================================================
+
+-- users: extended auth fields
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS totp_secret           TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS fingerprint_template  TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS fido2_credential_id   TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_login_country    CHAR(2);
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_changed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- suspects: extended physical / biometric fields
+ALTER TABLE public.suspects ADD COLUMN IF NOT EXISTS weight_kg           INTEGER;
+ALTER TABLE public.suspects ADD COLUMN IF NOT EXISTS eye_color           VARCHAR(20);
+ALTER TABLE public.suspects ADD COLUMN IF NOT EXISTS mugshot_sha256      VARCHAR(64);
+
+
+-- ============================================================================
+-- SECTION 3q: ADDITIONAL TABLES FROM SCHEMA.SQL
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 3q-i. nid_verifications — NID scan / manual check log (DIV App)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.nid_verifications (
+  id                    UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  method                nid_method    NOT NULL,
+  officer_id            UUID          NOT NULL REFERENCES public.users(id),
+  national_id_hash      VARCHAR(64)   NOT NULL,
+  nida_match            BOOLEAN,
+  ims_criminal_record   BOOLEAN       NOT NULL DEFAULT FALSE,
+  suspect_id_linked     UUID          REFERENCES public.suspects(id),
+  location_lat          DECIMAL(10,7),
+  location_lng          DECIMAL(10,7),
+  classification        clearance_level NOT NULL DEFAULT 'UNCLASSIFIED',
+  citizen_data_retained BOOLEAN       NOT NULL DEFAULT FALSE,
+  intelligence_event_id UUID          REFERENCES public.intelligence_events(id),
+  verified_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_nid_verif_officer   ON public.nid_verifications(officer_id);
+CREATE INDEX IF NOT EXISTS idx_nid_verif_ts        ON public.nid_verifications(verified_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nid_verif_criminal  ON public.nid_verifications(ims_criminal_record)
+  WHERE ims_criminal_record = TRUE;
+
+-- ----------------------------------------------------------------------------
+-- 3q-ii. case_officers — officers assigned to a case (many-to-many)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.case_officers (
+  case_id     UUID NOT NULL REFERENCES public.cases(id)   ON DELETE CASCADE,
+  officer_id  UUID NOT NULL REFERENCES public.users(id)   ON DELETE CASCADE,
+  role        VARCHAR(100) DEFAULT 'INVESTIGATOR',
+  assigned_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (case_id, officer_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- 3q-iii. interpol_notices — ingested Red/Orange/Blue notices
+-- (face_embedding column omitted — enable pgvector in Supabase then add manually)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.interpol_notices (
+  id                  UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  file_number         VARCHAR(50)   UNIQUE NOT NULL,
+  notice_color        interpol_notice_color NOT NULL,
+  subject_name        VARCHAR(255),
+  subject_dob         DATE,
+  subject_nationality CHAR(3),
+  charges             TEXT,
+  issuing_country     CHAR(3),
+  issued_at           DATE,
+  expires_at          DATE,
+  suspect_id          UUID          REFERENCES public.suspects(id),
+  last_synced_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  active              BOOLEAN       NOT NULL DEFAULT TRUE,
+  created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- 3q-iv. partner_queries — bilateral query log for international partners
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.partner_queries (
+  id                   UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  partner_id           UUID          NOT NULL REFERENCES public.international_partners(id),
+  query_image_hash     VARCHAR(64),
+  match_returned       BOOLEAN,
+  niss_reviewer_id     UUID          REFERENCES public.users(id),
+  response_released_at TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------------------------
+-- 3q-v. watchlists and watchlist_entries
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.watchlists (
+  id                 UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name               VARCHAR(255)  NOT NULL,
+  description        TEXT,
+  owning_institution institution_type NOT NULL,
+  clearance_level    clearance_level NOT NULL DEFAULT 'CONFIDENTIAL',
+  active             BOOLEAN       NOT NULL DEFAULT TRUE,
+  created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.watchlist_entries (
+  watchlist_id UUID          NOT NULL REFERENCES public.watchlists(id) ON DELETE CASCADE,
+  suspect_id   UUID          NOT NULL REFERENCES public.suspects(id)   ON DELETE CASCADE,
+  added_by     UUID          REFERENCES public.users(id),
+  priority     alert_priority NOT NULL DEFAULT 'MEDIUM',
+  notes        TEXT,
+  added_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (watchlist_id, suspect_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- 3q-vi. access_revocations — SIEM-driven revocation log
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.access_revocations (
+  id                  UUID              PRIMARY KEY DEFAULT uuid_generate_v4(),
+  scope               revocation_scope  NOT NULL,
+  target_user_id      UUID              REFERENCES public.users(id),
+  target_role         user_role,
+  target_institution  institution_type,
+  target_service      VARCHAR(100),
+  target_node_id      VARCHAR(50),
+  target_partner_id   UUID              REFERENCES public.international_partners(id),
+  revoked_by          UUID              NOT NULL REFERENCES public.users(id),
+  reason              TEXT              NOT NULL,
+  siem_event_id       UUID              REFERENCES public.siem_events(id),
+  active              BOOLEAN           NOT NULL DEFAULT TRUE,
+  reinstated_by       UUID              REFERENCES public.users(id),
+  reinstated_at       TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ       NOT NULL DEFAULT NOW()
+);
+
 
 -- ============================================================================
 -- SECTION 4: TRIGGERS
@@ -574,6 +759,40 @@ DO $$ BEGIN
     FOR EACH ROW EXECUTE FUNCTION public.generate_ims_reference();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- ----------------------------------------------------------------------------
+-- 4e. Location records immutability — no modifications allowed (purge only)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.prevent_location_modification()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'Location records are immutable — modification is prohibited';
+END;
+$$;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_location_immutable
+    BEFORE UPDATE ON public.location_records
+    FOR EACH ROW EXECUTE FUNCTION public.prevent_location_modification();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ----------------------------------------------------------------------------
+-- 4f. Audit event helper — convenience function for the API layer
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.log_audit_event(
+  p_event_type    TEXT,
+  p_actor_id      UUID,
+  p_target_type   TEXT,
+  p_target_id     UUID,
+  p_action        TEXT,
+  p_classification clearance_level DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO public.audit_log (event_type, actor_id, target_type, target_id, action, classification)
+  VALUES (p_event_type, p_actor_id, p_target_type, p_target_id, p_action, p_classification);
+END;
+$$;
+
 
 -- ============================================================================
 -- SECTION 5: ROW LEVEL SECURITY
@@ -660,6 +879,43 @@ DO $$ BEGIN
   CREATE POLICY "deny_anon_partners"     ON public.international_partners FOR ALL TO anon USING (false);
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- RLS for new tables
+ALTER TABLE public.nid_verifications   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.case_officers       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.interpol_notices    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.partner_queries     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.watchlists          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.watchlist_entries   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.access_revocations  ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_nid_verif"    ON public.nid_verifications   FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_case_off"     ON public.case_officers        FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_interpol"     ON public.interpol_notices     FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_pq"           ON public.partner_queries      FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_watchlists"   ON public.watchlists           FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_wl_entries"   ON public.watchlist_entries    FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "deny_anon_revocations"  ON public.access_revocations   FOR ALL TO anon USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 
 -- ============================================================================
 -- SECTION 6: SEED DATA
@@ -730,13 +986,34 @@ VALUES
   ('a0000005-0000-0000-0000-000000000004', 'RCS', 'RCS_OFFICER',       'UNCLASSIFIED',  'RCS-OFF-004',  'Agente de correction Immaculée Mukandori','i.mukandori@rcs.gov.rw',    '+250788500004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
--- IRONDO & DASSO (Community patrol — limited access)
+-- VILLAGE LEADERS (community intelligence reporting — limited access)
+-- Upgrade path: migrate any existing IRONDO/DASSO users to VILLAGE_LEADER first
+UPDATE public.users SET
+  institution  = 'VILLAGE_LEADER',
+  role         = 'VILLAGE_LEADER',
+  badge_number = CASE badge_number
+    WHEN 'IRO-PAT-001' THEN 'VL-001'
+    WHEN 'IRO-PAT-002' THEN 'VL-002'
+    WHEN 'DAS-OFF-001' THEN 'VL-003'
+    WHEN 'DAS-OFF-002' THEN 'VL-004'
+    ELSE badge_number
+  END,
+  email = CASE email
+    WHEN 'a.harerimana@irondo.gov.rw'  THEN 'a.harerimana@village.gov.rw'
+    WHEN 'f.mukabagwiza@irondo.gov.rw' THEN 'f.mukabagwiza@village.gov.rw'
+    WHEN 'r.nsengimana@dasso.gov.rw'   THEN 'r.nsengimana@village.gov.rw'
+    WHEN 'v.umulisa@dasso.gov.rw'      THEN 'v.umulisa@village.gov.rw'
+    ELSE email
+  END
+WHERE institution IN ('IRONDO', 'DASSO');
+
+-- Fresh insert for new databases (skipped automatically if upgrade above already ran)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000006-0000-0000-0000-000000000001', 'IRONDO', 'IRONDO_PATROL', 'UNCLASSIFIED', 'IRO-PAT-001', 'Augustin Harerimana',  'a.harerimana@irondo.gov.rw',  '+250788600001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000006-0000-0000-0000-000000000002', 'IRONDO', 'IRONDO_PATROL', 'UNCLASSIFIED', 'IRO-PAT-002', 'Félicité Mukabagwiza', 'f.mukabagwiza@irondo.gov.rw', '+250788600002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000007-0000-0000-0000-000000000001', 'DASSO',  'DASSO_OFFICER', 'UNCLASSIFIED', 'DAS-OFF-001', 'Révérien Nsengimana',  'r.nsengimana@dasso.gov.rw',  '+250788700001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000007-0000-0000-0000-000000000002', 'DASSO',  'DASSO_OFFICER', 'UNCLASSIFIED', 'DAS-OFF-002', 'Vestine Umulisa',      'v.umulisa@dasso.gov.rw',     '+250788700002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000006-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-001', 'Augustin Harerimana',  'a.harerimana@village.gov.rw',  '+250788600001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
+  ('a0000006-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-002', 'Félicité Mukabagwiza', 'f.mukabagwiza@village.gov.rw', '+250788600002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
+  ('a0000007-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-003', 'Révérien Nsengimana',  'r.nsengimana@village.gov.rw',  '+250788700001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
+  ('a0000007-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-004', 'Vestine Umulisa',      'v.umulisa@village.gov.rw',     '+250788700002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 
@@ -1644,12 +1921,26 @@ ON CONFLICT (country_code) DO NOTHING;
 -- ============================================================================
 -- Summary:
 --   Extensions  : uuid-ossp, pgcrypto, pg_trgm
---   Enums       : 8 types
---   Tables      : 15 tables
---   Indexes     : 20+ indexes
---   Triggers    : 4 functions × multiple tables + immutability + auto-location
---   RLS         : Enabled on all 15 tables; anon denied; service_role bypasses
---   Seed users  : 27 across NISS, RNP, RIB, RDF, RCS, IRONDO, DASSO
+--   Enums       : 12 types (+ nid_method, crime_category, interpol_notice_color,
+--                           revocation_scope; + CLEARED value for suspect_status)
+--   Tables      : 22 tables
+--                 Core (15): users, otp_verifications, user_sessions, suspects,
+--                   warrants, cases, case_suspects, intelligence_events,
+--                   location_records, corrections_records, camera_nodes,
+--                   alerts, siem_events, audit_log, international_partners
+--                 Added (7): nid_verifications, case_officers, interpol_notices,
+--                   partner_queries, watchlists, watchlist_entries, access_revocations
+--   Column upgrades (existing tables):
+--                 users: totp_secret, fingerprint_template, fido2_credential_id,
+--                   last_login_country, password_changed_at
+--                 suspects: weight_kg, eye_color, mugshot_sha256
+--                 international_partners: api_key_hash, tls_cert_hash, revoked, revoked_at
+--   Indexes     : 30+ indexes
+--   Triggers    : 6 functions — updated_at (4 tables), audit immutability,
+--                 auto-location, location immutability, IMS reference generation
+--   Functions   : log_audit_event() — audit helper for API layer
+--   RLS         : Enabled on all 22 tables; anon denied; service_role bypasses
+--   Seed users  : 27 across NISS, RNP, RIB, RDF, RCS, VILLAGE_LEADER
 --   Seed suspects: 12 with fixed UUIDs
 --   Seed warrants: 7 warrants
 --   Seed cases  : 8 cases + 10 case-suspect links
