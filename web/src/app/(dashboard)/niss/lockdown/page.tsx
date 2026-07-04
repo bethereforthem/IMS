@@ -57,7 +57,7 @@ export default function EmergencyLockdown() {
         <div className="flex items-center gap-3 text-red-400">
           <AlertTriangle className="h-6 w-6 shrink-0" />
           <p className="text-sm font-semibold">
-            This action immediately terminates all active sessions for RNP, RIB, RDF, RCS, Irondo, and Dasso users.
+            This action immediately terminates all active sessions for RNP, RIB, RDF, RCS, and Village Leader users.
             It cannot be undone except by re-authenticating.
           </p>
         </div>
