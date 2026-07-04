@@ -14,7 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";         -- trigram search
 -- ============================================================
 
 CREATE TYPE institution_type AS ENUM (
-  'RNP', 'RIB', 'RDF', 'NISS', 'RCS', 'IRONDO', 'DASSO', 'INTERNATIONAL'
+  'RNP', 'RIB', 'RDF', 'NISS', 'RCS', 'VILLAGE_LEADER', 'INTERNATIONAL'
 );
 
 CREATE TYPE user_role AS ENUM (
@@ -23,7 +23,7 @@ CREATE TYPE user_role AS ENUM (
   'RIB_INVESTIGATOR', 'RIB_ANALYST',
   'RDF_COMMANDER', 'RDF_BORDER_OFFICER',
   'RCS_SUPERINTENDENT', 'RCS_OFFICER',
-  'IRONDO_PATROL', 'DASSO_OFFICER',
+  'VILLAGE_LEADER',
   'SYSTEM_ADMIN', 'SIEM_ANALYST'
 );
 
