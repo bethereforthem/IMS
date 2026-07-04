@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { statsApi, suspectsApi, warrantsApi } from '@/lib/api'
+import dynamic from 'next/dynamic'
+import { statsApi, suspectsApi, warrantsApi, cameraApi } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
@@ -11,10 +12,10 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
 } from 'recharts'
-import { Users, AlertTriangle, FileText, Radio, Shield, Plus } from 'lucide-react'
+import { Users, AlertTriangle, FileText, Radio, Shield, Plus, MapPin } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
-import type { DashboardStats, Suspect, IntelligenceEvent } from '@/types'
+import type { DashboardStats, Suspect, IntelligenceEvent, CameraNode } from '@/types'
 
 const STATUS_COLORS: Record<string, string> = {
   WANTED: '#DC2626',
@@ -28,6 +29,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 const THREAT_COLOR = ['', 'text-green-400', 'text-yellow-400', 'text-amber-400', 'text-orange-400', 'text-red-500']
 
+const MapView = dynamic(() => import('./map/_MapView'), { ssr: false })
+
 function SkeletonCard() {
   return <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-24 animate-pulse" />
 }
@@ -39,6 +42,7 @@ export default function RNPOperations() {
   const [wanted, setWanted] = useState<Suspect[]>([])
   const [events, setEvents] = useState<IntelligenceEvent[]>([])
   const [warrants, setWarrants] = useState<Record<string, unknown>[]>([])
+  const [cameras, setCameras] = useState<CameraNode[]>([])
   const [showAddSuspect, setShowAddSuspect] = useState(false)
   const [showAddWarrant, setShowAddWarrant] = useState(false)
 
@@ -49,11 +53,13 @@ export default function RNPOperations() {
       suspectsApi.list({ status: 'WANTED', limit: 30 }),
       statsApi.getRecentEvents(14),
       warrantsApi.list({ active: true, limit: 20 }),
-    ]).then(([s, w, e, wa]) => {
+      cameraApi.list(),
+    ]).then(([s, w, e, wa, c]) => {
       if (s.data) setStats(s.data)
       if (w.data?.suspects?.length) setWanted(w.data.suspects)
       if (e.data?.length) setEvents(e.data)
       if (wa.data?.warrants?.length) setWarrants(wa.data.warrants)
+      if (c.data?.length) setCameras(c.data as CameraNode[])
     }).catch(console.error)
       .finally(() => setLoading(false))
   }, [])
@@ -164,6 +170,20 @@ export default function RNPOperations() {
       ) : (
         <p className="text-sm text-slate-500 py-4">Could not load statistics.</p>
       )}
+
+      {/* Operations Map */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <MapPin className="h-4 w-4 text-rnp" />
+          <h2 className="text-sm font-semibold text-slate-200">Operations Map</h2>
+          <span className="ml-1 text-[10px] text-green-500 font-mono animate-pulse">● LIVE</span>
+          <span className="ml-auto text-[10px] text-slate-500">Use the layer panel (top-right) to switch base maps and toggle overlays</span>
+        </div>
+        <MapView
+          cameraNodes={cameras.filter(c => c.latitude != null && c.longitude != null)}
+          intelEvents={events.filter(ev => ev.location_lat != null && ev.location_lng != null)}
+        />
+      </div>
 
       {/* Wanted suspects + Alerts */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -359,7 +379,7 @@ export default function RNPOperations() {
                     <tr key={i} className="border-b border-slate-800/50 text-xs hover:bg-slate-800/20">
                       <td className="py-2.5 text-slate-200 font-medium">
                         {suspect?.full_name ? String(suspect.full_name) : '—'}
-                        {suspect?.ims_reference && (
+                        {suspect?.ims_reference != null && (
                           <p className="text-[10px] text-slate-500 font-mono">{String(suspect.ims_reference)}</p>
                         )}
                       </td>
