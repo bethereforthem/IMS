@@ -7,6 +7,7 @@ import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { AddCaseModal } from '@/components/shared/AddCaseModal'
 import { AddSuspectModal } from '@/components/shared/AddSuspectModal'
 import { useAuth } from '@/hooks/useAuth'
+import { AnalystDashboard } from './_AnalystDashboard'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend,
@@ -37,7 +38,7 @@ function SkeletonCard() {
   return <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-24 animate-pulse" />
 }
 
-export default function RIBInvestigations() {
+function InvestigatorDashboard() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -342,4 +343,9 @@ export default function RIBInvestigations() {
       </div>
     </div>
   )
+}
+
+export default function RIBPage() {
+  const { user } = useAuth()
+  return user?.role === 'RIB_ANALYST' ? <AnalystDashboard /> : <InvestigatorDashboard />
 }
