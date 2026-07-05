@@ -80,7 +80,7 @@ export default function AppLayout() {
         name="tracking"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Tracking" emoji="📡" color={C.niss} focused={focused} />
+            <TabIcon label="Tracking" emoji="📡" color={accent} focused={focused} />
           ),
           tabBarItemStyle: isNissAgent ? {} : { display: 'none' },
         }}
