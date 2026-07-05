@@ -252,3 +252,77 @@ export const adminApi = {
   revokeAccess: (targetUserId: string, reason: string) =>
     api.post('/admin/revoke-access', { target_user_id: targetUserId, reason }),
 }
+
+// ─── Field Reports ────────────────────────────────────────────────────────────
+
+export interface WebFieldReport {
+  id: string
+  agent_id: string
+  agent_name?: string
+  agent_badge?: string
+  agent_institution?: string
+  agent_role?: string
+  title: string
+  category: string
+  description: string
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  incident_date: string
+  notes?: string
+  location_lat?: number | null
+  location_lng?: number | null
+  location_description?: string
+  assigned_to?: string[]
+  status: string
+  alert_id?: string
+  intelligence_event_id?: string
+  tracking_session_id?: string
+  media_urls?: string[]
+  created_at: string
+  tracking_session?: {
+    id: string; status: string; started_at: string; total_pings: number
+  } | null
+}
+
+export const fieldReportsApi = {
+  list: (params?: { status?: string; priority?: string; limit?: number }) =>
+    api.get<{ reports: WebFieldReport[]; total: number }>('/field-reports', { params }),
+  get: (id: string) =>
+    api.get<WebFieldReport>(`/field-reports/${id}`),
+  assign: (id: string, assigned_to: string[], status?: string) =>
+    api.patch<{ id: string; status: string; assigned_to: string[] }>(
+      `/field-reports/${id}/assign`,
+      { assigned_to, status }
+    ),
+}
+
+// ─── Agent Tracking (commander view) ─────────────────────────────────────────
+
+export interface ActiveAgent {
+  session_id: string
+  session_status: 'ACTIVE' | 'PAUSED'
+  started_at: string
+  total_pings: number
+  field_report_id?: string
+  agent_id?: string
+  agent_name?: string
+  agent_badge?: string
+  agent_institution?: string
+  agent_role?: string
+  last_lat?: number | null
+  last_lng?: number | null
+  last_heading?: number | null
+  last_ping_at?: string | null
+  report_title?: string | null
+  report_priority?: string | null
+}
+
+export const agentTrackingApi = {
+  getActiveAgents: () =>
+    api.get<{ agents: ActiveAgent[]; total: number }>('/agent-tracking/agents'),
+  getPings: (sessionId: string, limit = 500) =>
+    api.get<{ pings: Array<{ lat: number; lng: number; pinged_at: string }>; total: number }>(
+      `/agent-tracking/sessions/${sessionId}?limit=${limit}`
+    ),
+  sessionAction: (sessionId: string, action: 'pause' | 'resume' | 'close') =>
+    api.patch(`/agent-tracking/sessions/${sessionId}`, { action }),
+}
