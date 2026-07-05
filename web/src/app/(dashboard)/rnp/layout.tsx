@@ -3,10 +3,11 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { DashboardShell, NavItem } from '@/components/shared/DashboardShell'
-import { LayoutDashboard, Users, FileText, Radio, AlertTriangle, Activity, Map } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Radio, AlertTriangle, Activity, Map, Crosshair } from 'lucide-react'
 
 const nav: NavItem[] = [
   { label: 'Operations',      href: '/rnp',                icon: LayoutDashboard },
+  { label: 'Field Incidents', href: '/rnp/incidents',      icon: Crosshair },
   { label: 'Wanted Suspects', href: '/rnp/wanted',         icon: Users },
   { label: 'Active Warrants', href: '/rnp/warrants',       icon: FileText },
   { label: 'Alerts',          href: '/rnp/alerts',         icon: AlertTriangle },
