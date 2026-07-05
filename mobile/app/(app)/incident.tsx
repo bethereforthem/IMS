@@ -1,12 +1,12 @@
 /**
- * NISS Field Incident Report Screen
+ * Field Incident Report Screen — shared across NISS, RDF, RNP agents.
  *
- * Officers submit a structured incident report that:
- *  1. Captures title, category, description, priority, date/time, notes, GPS
- *  2. Optionally attaches images / videos
- *  3. Submits directly to the centralized DB (creates alert + intel event)
- *  4. Auto-starts live GPS tracking session
- *  5. Falls back to offline queue when network is unavailable
+ * Behaviour adapts by institution:
+ *  - Accent color from INSTITUTION_COLOR[user.institution]
+ *  - Category list scoped to the agent's operational domain
+ *  - Form submits to the centralized DB, creates an alert + intel event,
+ *    and auto-starts live GPS tracking
+ *  - Falls back to offline queue when network is unavailable
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -26,20 +26,57 @@ import { C, RADIUS, INSTITUTION_COLOR } from '@/lib/theme'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CATEGORIES = [
+// Categories scoped per institution domain
+const CATEGORIES_NISS = [
   'Terrorism / Extremism',
-  'Armed Robbery',
   'Assassination Threat',
-  'Smuggling / Trafficking',
   'Cybercrime / Espionage',
-  'Border Violation',
-  'Suspicious Activity',
+  'Smuggling / Trafficking',
+  'Political Threat',
+  'Organized Crime',
   'Illegal Weapons',
   'Drug Operation',
-  'Organized Crime',
-  'Political Threat',
+  'Armed Robbery',
+  'Suspicious Activity',
+  'Foreign Intelligence Activity',
   'Other',
 ]
+
+const CATEGORIES_RDF = [
+  'Border Violation',
+  'Illegal Entry / Exit',
+  'Armed Incursion',
+  'Military Threat',
+  'Weapon / Ammunition Smuggling',
+  'Terrorism / Extremism',
+  'Espionage / Infiltration',
+  'Contraband Operation',
+  'National Security Threat',
+  'Suspicious Military Activity',
+  'Unauthorized Armed Group',
+  'Other',
+]
+
+const CATEGORIES_RNP = [
+  'Armed Robbery',
+  'Assault / Violence',
+  'Drug Operation',
+  'Illegal Weapons',
+  'Gang Activity',
+  'Organized Crime',
+  'Suspicious Activity',
+  'Human Trafficking',
+  'Terrorism / Extremism',
+  'Property Crime',
+  'Public Order Threat',
+  'Other',
+]
+
+function getCategoriesForInstitution(institution?: string): string[] {
+  if (institution === 'RDF') return CATEGORIES_RDF
+  if (institution === 'RNP') return CATEGORIES_RNP
+  return CATEGORIES_NISS  // NISS and all others
+}
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
 type Priority = typeof PRIORITIES[number]
@@ -57,10 +94,11 @@ export default function IncidentScreen() {
   const { user } = useAuth()
   const router = useRouter()
   const accent = user ? (INSTITUTION_COLOR[user.institution] ?? C.niss) : C.niss
+  const CATEGORIES = getCategoriesForInstitution(user?.institution)
 
   // Form state
   const [title, setTitle]           = useState('')
-  const [category, setCategory]     = useState(CATEGORIES[6])
+  const [category, setCategory]     = useState(CATEGORIES[0])
   const [description, setDesc]      = useState('')
   const [priority, setPriority]     = useState<Priority>('HIGH')
   const [incidentDate, setIncDate]  = useState(new Date().toISOString().slice(0, 16))
@@ -196,7 +234,7 @@ export default function IncidentScreen() {
     setTitle(''); setDesc(''); setPriority('HIGH')
     setNotes(''); setLocDesc(''); setMediaUris([])
     setIncDate(new Date().toISOString().slice(0, 16))
-    setCategory(CATEGORIES[6])
+    setCategory(CATEGORIES[0])
     setSubmitted(false); setOffline(false); setError('')
     submittedDataRef.current = { session_id: null, report_id: null, alert_id: null }
     setTracking(false)
@@ -288,7 +326,11 @@ export default function IncidentScreen() {
         {/* Header */}
         <View style={s.header}>
           <View style={[s.headerBadge, { backgroundColor: accent + '22', borderColor: accent + '55' }]}>
-            <Text style={[s.headerBadgeText, { color: accent }]}>CLASSIFIED REPORT</Text>
+            <Text style={[s.headerBadgeText, { color: accent }]}>
+              {user?.institution === 'RDF' ? 'MILITARY INTELLIGENCE REPORT'
+                : user?.institution === 'RNP' ? 'LAW ENFORCEMENT REPORT'
+                : 'CLASSIFIED REPORT'}
+            </Text>
           </View>
         </View>
 
