@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { locationApi, intelligenceApi } from '@/lib/api'
+import { locationApi, intelligenceApi, agentTrackingApi, type ActiveAgent } from '@/lib/api'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { StatCard } from '@/components/shared/StatCard'
 import { formatDistanceToNow } from 'date-fns'
@@ -14,34 +14,20 @@ import type { FieldAgent } from './_LocationMap'
 // Dynamic import — prevents Leaflet SSR crash
 const LocationMap = dynamic(() => import('./_LocationMap'), { ssr: false })
 
-// ── Simulated field operative GPS data ────────────────────────────────────────
-// Replace with real API endpoint (POST /api/v1/field-agents/ping) when deployed
-const FIELD_AGENTS: FieldAgent[] = [
-  {
-    id: 'ag1', name: 'Maj. Uwimana Patrick', badge: 'NISS-OFF-003',
-    institution: 'NISS', lat: -1.9441, lng: 30.0619,
-    status: 'ACTIVE', heading: 'N',
-    last_ping: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'ag2', name: 'Insp. Habimana Jean', badge: 'RNP-DET-005',
-    institution: 'RNP', lat: -1.9700, lng: 30.1042,
-    status: 'SOS', heading: 'NE',
-    last_ping: new Date(Date.now() - 30 * 1000).toISOString(),
-  },
-  {
-    id: 'ag3', name: 'Cpl. Mukamana Rose', badge: 'RNP-PAT-012',
-    institution: 'RNP', lat: -2.0150, lng: 29.9340,
-    status: 'ACTIVE',
-    last_ping: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'ag4', name: 'Lt. Nzabonimpa Eric', badge: 'RDF-CMD-008',
-    institution: 'RDF', lat: -1.8200, lng: 29.7810,
-    status: 'OFFLINE',
-    last_ping: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-  },
-]
+// Convert real ActiveAgent records to the FieldAgent format the map expects
+function toFieldAgent(a: ActiveAgent): FieldAgent {
+  return {
+    id: a.session_id,
+    name: a.agent_name ?? 'Unknown Agent',
+    badge: a.agent_badge ?? '—',
+    institution: a.agent_institution ?? 'NISS',
+    lat: a.last_lat ?? 0,
+    lng: a.last_lng ?? 0,
+    status: a.session_status === 'ACTIVE' ? 'ACTIVE' : 'OFFLINE',
+    heading: a.last_heading != null ? String(Math.round(a.last_heading)) : undefined,
+    last_ping: a.last_ping_at ?? new Date().toISOString(),
+  }
+}
 
 interface DirectPanel {
   agent: FieldAgent
@@ -52,7 +38,7 @@ interface DirectPanel {
 export default function NISSLocationPage() {
   const { user } = useAuth()
   const [locations,     setLocations]     = useState<LocationRecord[]>([])
-  const [agents]                          = useState<FieldAgent[]>(FIELD_AGENTS)
+  const [agents,        setAgents]        = useState<FieldAgent[]>([])
   const [alertEvents,   setAlertEvents]   = useState<IntelligenceEvent[]>([])
   const [alertSyncedAt, setAlertSyncedAt] = useState<Date | null>(null)
   const [direction,     setDirection]     = useState<DirectPanel | null>(null)
@@ -62,8 +48,20 @@ export default function NISSLocationPage() {
   const fetchLocations = useCallback(async () => {
     setRefreshing(true)
     try {
-      const r = await locationApi.getRecentLocations()
-      if (Array.isArray(r.data) && r.data.length) setLocations(r.data)
+      const [locRes, agentRes] = await Promise.allSettled([
+        locationApi.getRecentLocations(),
+        agentTrackingApi.getActiveAgents(),
+      ])
+      if (locRes.status === 'fulfilled') {
+        const d = locRes.value.data
+        if (Array.isArray(d) && d.length) setLocations(d)
+      }
+      if (agentRes.status === 'fulfilled') {
+        const d = agentRes.value.data?.agents ?? []
+        // Only show agents with a known position
+        const withPos = d.filter(a => a.last_lat != null && a.last_lng != null)
+        setAgents(withPos.map(toFieldAgent))
+      }
     } catch { /* silently ignore — show stale data */ }
     setLastRefresh(new Date())
     setRefreshing(false)
@@ -71,9 +69,9 @@ export default function NISSLocationPage() {
 
   useEffect(() => { fetchLocations() }, [fetchLocations])
 
-  // Auto-refresh every 30 s for near-real-time GPS updates
+  // Auto-refresh every 20 s for near-real-time GPS updates
   useEffect(() => {
-    const id = setInterval(fetchLocations, 30_000)
+    const id = setInterval(fetchLocations, 20_000)
     return () => clearInterval(id)
   }, [fetchLocations])
 
