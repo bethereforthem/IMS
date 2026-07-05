@@ -149,3 +149,58 @@ export interface LocationRecord {
   source_tag: SourceTag
   recorded_at: string
 }
+
+export type IncidentPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+export type IncidentStatus   = 'OPEN' | 'ASSIGNED' | 'INVESTIGATING' | 'CLOSED' | 'PAUSED'
+
+export interface FieldReport {
+  id: string
+  agent_id: string
+  agent_name?: string
+  agent_badge?: string
+  agent_institution?: string
+  agent_role?: string
+  title: string
+  category: string
+  description: string
+  priority: IncidentPriority
+  incident_date: string
+  notes?: string
+  location_lat?: number | null
+  location_lng?: number | null
+  location_description?: string
+  assigned_to?: string[]
+  status: IncidentStatus
+  alert_id?: string
+  intelligence_event_id?: string
+  tracking_session_id?: string
+  media_urls?: string[]
+  created_at: string
+  updated_at: string
+  tracking_session?: {
+    id: string
+    status: 'ACTIVE' | 'PAUSED' | 'CLOSED'
+    started_at: string
+    total_pings: number
+  } | null
+}
+
+export interface AgentTrackingSession {
+  id: string
+  agent_id: string
+  field_report_id?: string
+  status: 'ACTIVE' | 'PAUSED' | 'CLOSED'
+  started_at: string
+  paused_at?: string
+  closed_at?: string
+  total_pings: number
+}
+
+export interface AgentLocationPing {
+  lat: number
+  lng: number
+  accuracy_m?: number
+  heading?: number
+  speed_ms?: number
+  pinged_at: string
+}
