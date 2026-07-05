@@ -22,6 +22,9 @@ export default function AppLayout() {
   const { user } = useAuth()
   const accent = user ? (INSTITUTION_COLOR[user.institution] ?? C.rnp) : C.rnp
   const vl = isVillageLeader(user?.role)
+  // NISS / RDF / RNP officers get the full Incident tab
+  const isNissAgent = !vl && ['NISS_OFFICER', 'NISS_DIRECTOR', 'RDF_BORDER_OFFICER',
+    'RDF_COMMANDER', 'RNP_PATROL', 'RNP_DETECTIVE', 'RNP_COMMANDER'].includes(user?.role ?? '')
 
   return (
     <Tabs
@@ -53,19 +56,40 @@ export default function AppLayout() {
           ),
         }}
       />
+      {/* Incident reporting tab — field agents only */}
+      <Tabs.Screen
+        name="incident"
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon label="Incident" emoji="🚨" color={accent} focused={focused} />
+          ),
+          tabBarItemStyle: isNissAgent ? {} : { display: 'none' },
+        }}
+      />
       <Tabs.Screen
         name="report"
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon label={vl ? 'Report' : 'Intel'} emoji={vl ? '📋' : '📡'} color={accent} focused={focused} />
           ),
+          tabBarItemStyle: isNissAgent ? { display: 'none' } : {},
+        }}
+      />
+      {/* Live tracking tab */}
+      <Tabs.Screen
+        name="tracking"
+        options={{
+          tabBarIcon: ({ focused }) => (
+            <TabIcon label="Tracking" emoji="📡" color={C.niss} focused={focused} />
+          ),
+          tabBarItemStyle: isNissAgent ? {} : { display: 'none' },
         }}
       />
       <Tabs.Screen
         name="sos"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="SOS" emoji="🚨" color={C.danger} focused={focused} />
+            <TabIcon label="SOS" emoji="🔴" color={C.danger} focused={focused} />
           ),
         }}
       />
