@@ -27,6 +27,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'audit:read',
     'alerts:read', 'alerts:acknowledge',
     'camera_nodes:manage', 'source_attribution:read',
+    'field_reports:read', 'field_reports:write', 'field_reports:assign',
+    'agent_tracking:read', 'agent_tracking:manage',
   ]),
 
   NISS_OFFICER: new Set([
@@ -41,6 +43,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'audit:read',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'field_reports:read', 'field_reports:write', 'field_reports:assign',
+    'agent_tracking:read', 'agent_tracking:manage',
   ]),
 
   RNP_COMMANDER: new Set([
@@ -54,6 +58,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'alerts:read', 'alerts:acknowledge',
     'audit:read:own_institution',
     'source_attribution:read',
+    'field_reports:read', 'field_reports:write',
+    'agent_tracking:read',
   ]),
 
   RNP_DETECTIVE: new Set([
@@ -65,6 +71,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'watchlist:read', 'watchlist:write',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'field_reports:read', 'field_reports:write',
+    'agent_tracking:read',
   ]),
 
   RNP_PATROL: new Set([
@@ -72,6 +80,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'nid:scan',
     'watchlist:read',
     'alerts:read',
+    'field_reports:write',
+    'agent_tracking:read',
   ]),
 
   RIB_INVESTIGATOR: new Set([
@@ -84,6 +94,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'revocation:own',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'field_reports:read',
   ]),
 
   RIB_ANALYST: new Set([
@@ -93,6 +104,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'watchlist:read',
     'alerts:read',
     'source_attribution:read',
+    'field_reports:read',
   ]),
 
   RDF_COMMANDER: new Set([
@@ -104,6 +116,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'revocation:own',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'field_reports:read', 'field_reports:write',
+    'agent_tracking:read',
   ]),
 
   RDF_BORDER_OFFICER: new Set([
@@ -112,6 +126,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'watchlist:read',
     'alerts:read',
     'source_attribution:read',
+    'field_reports:write',
+    'agent_tracking:read',
   ]),
 
   RCS_SUPERINTENDENT: new Set([
