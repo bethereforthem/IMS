@@ -6,6 +6,8 @@ import {
 import { useRouter } from 'expo-router'
 import { useAuth, isVillageLeader } from '@/hooks/useAuth'
 import { dashboardApi, Alert } from '@/lib/api'
+import { getTrackingSession } from '@/lib/offlineStore'
+import { getQueue } from '@/lib/offlineStore'
 import { C, INSTITUTION_COLOR, INSTITUTION_LABEL, RADIUS } from '@/lib/theme'
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -32,6 +34,11 @@ export default function DashboardScreen() {
 
   const accent = user ? (INSTITUTION_COLOR[user.institution] ?? C.rnp) : C.rnp
   const vl     = isVillageLeader(user?.role)
+  const isNissAgent = !vl && ['NISS_OFFICER', 'NISS_DIRECTOR', 'RDF_BORDER_OFFICER',
+    'RDF_COMMANDER', 'RNP_PATROL', 'RNP_DETECTIVE', 'RNP_COMMANDER'].includes(user?.role ?? '')
+
+  const [trackingActive, setTrackingActive] = useState(false)
+  const [offlineCount, setOfflineCount]     = useState(0)
 
   async function load() {
     try {
@@ -42,6 +49,13 @@ export default function DashboardScreen() {
       setStats(sRes.data)
       setAlerts(aRes.data?.alerts ?? [])
     } catch { /* ignore */ }
+
+    if (isNissAgent) {
+      const sess = await getTrackingSession()
+      setTrackingActive(!!sess)
+      const q = await getQueue()
+      setOfflineCount(q.length)
+    }
   }
 
   useEffect(() => {
@@ -97,12 +111,35 @@ export default function DashboardScreen() {
             </View>
           )}
 
+          {/* Tracking status banner */}
+          {isNissAgent && trackingActive && (
+            <TouchableOpacity
+              style={s.trackingBanner}
+              onPress={() => router.push('/(app)/tracking')}
+            >
+              <View style={s.trackingDot} />
+              <Text style={s.trackingBannerText}>Live GPS Tracking Active — Tap to manage</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Offline queue banner */}
+          {offlineCount > 0 && (
+            <View style={s.offlineBanner}>
+              <Text style={s.offlineBannerText}>
+                📦 {offlineCount} offline report{offlineCount > 1 ? 's' : ''} pending sync
+              </Text>
+            </View>
+          )}
+
           {/* Quick actions */}
           <Text style={s.sectionTitle}>Quick Actions</Text>
           <View style={s.actions}>
             <ActionBtn label="NID Check"   emoji="🔍" onPress={() => router.push('/(app)/nid')}    color={accent} />
-            <ActionBtn label={vl ? 'Report' : 'Intel Report'} emoji={vl ? '📋' : '📡'} onPress={() => router.push('/(app)/report')} color={accent} />
-            <ActionBtn label="SOS"          emoji="🚨" onPress={() => router.push('/(app)/sos')}    color={C.danger} />
+            {isNissAgent
+              ? <ActionBtn label="Incident" emoji="🚨" onPress={() => router.push('/(app)/incident')} color={accent} />
+              : <ActionBtn label={vl ? 'Report' : 'Intel'} emoji={vl ? '📋' : '📡'} onPress={() => router.push('/(app)/report')} color={accent} />
+            }
+            <ActionBtn label="SOS"          emoji="🔴" onPress={() => router.push('/(app)/sos')}    color={C.danger} />
           </View>
 
           {/* Recent alerts */}
@@ -181,6 +218,20 @@ const s = StyleSheet.create({
 
   empty:     { alignItems: 'center', paddingVertical: 30 },
   emptyText: { color: C.muted, fontSize: 14 },
+
+  trackingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#1e1b4b', borderRadius: RADIUS.md, padding: 12,
+    marginBottom: 12, borderWidth: 1, borderColor: '#4338ca',
+  },
+  trackingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#818cf8' },
+  trackingBannerText: { color: '#a5b4fc', fontSize: 13, fontWeight: '600' },
+
+  offlineBanner: {
+    backgroundColor: '#1c1917', borderRadius: RADIUS.md, padding: 12,
+    marginBottom: 12, borderWidth: 1, borderColor: '#78716c', alignItems: 'center',
+  },
+  offlineBannerText: { color: '#a8a29e', fontSize: 13 },
 })
 
 const sc = StyleSheet.create({
