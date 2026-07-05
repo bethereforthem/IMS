@@ -141,10 +141,87 @@ export const sosApi = {
     }),
 }
 
+// ─── Field Incident Reports ──────────────────────────────────────────────────
+
+export interface FieldReportPayload {
+  offline_id?: string
+  title: string
+  category: string
+  description: string
+  priority?: string
+  incident_date?: string
+  notes?: string
+  location_lat?: number | null
+  location_lng?: number | null
+  location_description?: string
+  media_urls?: string[]
+}
+
+export interface FieldReportResult {
+  id: string
+  alert_id: string
+  intelligence_event_id: string
+  tracking_session_id: string | null
+  already_synced?: boolean
+}
+
+export const fieldReportApi = {
+  submit: (payload: FieldReportPayload) =>
+    client.post<FieldReportResult>('/field-reports', payload),
+
+  getMyReports: (limit = 10) =>
+    client.get<{ reports: FieldReport[]; total: number }>(`/field-reports?limit=${limit}`),
+}
+
+// ─── Agent Tracking ──────────────────────────────────────────────────────────
+
+export interface TrackingPingPayload {
+  session_id: string
+  lat: number
+  lng: number
+  accuracy_m?: number
+  heading?: number
+  speed_ms?: number
+}
+
+export const trackingApi = {
+  ping: (session_id: string, point: { lat: number; lng: number; accuracy_m?: number; heading?: number; speed_ms?: number }) =>
+    client.post<{ recorded: boolean; pinged_at: string }>('/agent-tracking/ping', {
+      session_id, ...point,
+    }),
+
+  sessionAction: (session_id: string, action: 'pause' | 'resume' | 'close') =>
+    client.patch<{ id: string; status: string }>(`/agent-tracking/sessions/${session_id}`, { action }),
+
+  getPings: (session_id: string, limit = 200) =>
+    client.get<{ pings: Array<{ lat: number; lng: number; pinged_at: string }>; total: number }>(
+      `/agent-tracking/sessions/${session_id}?limit=${limit}`
+    ),
+}
+
 // Re-export the raw client for one-off calls
 export { client }
 
 // ─── Local types ─────────────────────────────────────────────────────────────
+
+export interface FieldReport {
+  id: string
+  agent_id: string
+  title: string
+  category: string
+  description: string
+  priority: string
+  incident_date: string
+  notes?: string
+  location_lat?: number | null
+  location_lng?: number | null
+  status: string
+  assigned_to?: string[]
+  alert_id?: string
+  tracking_session_id?: string
+  media_urls?: string[]
+  created_at: string
+}
 
 export interface Alert {
   id: string
