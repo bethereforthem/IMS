@@ -3,11 +3,13 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { DashboardShell, NavItem } from '@/components/shared/DashboardShell'
-import { LayoutDashboard, Radio, Users, AlertTriangle, Map, Activity, Crosshair } from 'lucide-react'
+import { LayoutDashboard, Radio, Users, AlertTriangle, Map, Activity, Crosshair, Brain, ScanLine } from 'lucide-react'
 
 const nav: NavItem[] = [
   { label: 'Border Ops',      href: '/rdf',              icon: LayoutDashboard },
   { label: 'Field Incidents', href: '/rdf/incidents',    icon: Crosshair },
+  { label: 'ID Verify',       href: '/rdf/verify',       icon: ScanLine },
+  { label: 'AI Intelligence', href: '/rdf/ai',           icon: Brain },
   { label: 'Camera Nodes',    href: '/rdf/cameras',      icon: Radio },
   { label: 'Border Suspects', href: '/rdf/suspects',     icon: Users },
   { label: 'Alerts',          href: '/rdf/alerts',       icon: AlertTriangle },
