@@ -44,7 +44,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
 
     if (pingErr) return apiError('Failed to record ping', 500)
 
-    // Increment ping counter via direct update
+    // Increment ping counter and update session in one round-trip
     const { data: latest } = await supabase
       .from('agent_tracking_sessions')
       .select('total_pings')
@@ -55,6 +55,27 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       .from('agent_tracking_sessions')
       .update({ total_pings: ((latest?.total_pings as number | null) ?? 0) + 1 })
       .eq('id', session_id)
+
+    // Location ping counts as a heartbeat — refresh availability
+    await supabase
+      .from('agent_availability')
+      .upsert(
+        {
+          agent_id:          user.user_id,
+          status:            'ONLINE',
+          offline_reason:    null,
+          last_heartbeat_at: now,
+          last_known_lat:    Number(lat),
+          last_known_lng:    Number(lng),
+          last_known_at:     now,
+          offline_since:     null,
+          institution:       user.institution,
+          agent_name:        user.full_name,
+          agent_badge:       user.badge_number,
+          updated_at:        now,
+        },
+        { onConflict: 'agent_id' }
+      )
 
     return apiSuccess({ recorded: true, pinged_at: now })
   } catch (err) {
