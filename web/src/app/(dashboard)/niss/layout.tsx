@@ -5,12 +5,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { DashboardShell, NavItem } from '@/components/shared/DashboardShell'
 import {
   LayoutDashboard, Users, MapPin, Shield, FileText,
-  Radio, Globe, Lock, Activity, AlertTriangle, Crosshair,
+  Radio, Globe, Lock, Activity, AlertTriangle, Crosshair, Brain,
 } from 'lucide-react'
 
 const nav: NavItem[] = [
   { label: 'Command Center',    href: '/niss',                icon: LayoutDashboard },
   { label: 'Field Incidents',   href: '/niss/incidents',      icon: Crosshair },
+  { label: 'AI Intelligence',   href: '/niss/ai',             icon: Brain },
   { label: 'Alerts & SIEM',     href: '/niss/alerts',         icon: AlertTriangle },
   { label: 'Suspects',          href: '/niss/suspects',       icon: Users },
   { label: 'Location Intel',    href: '/niss/location',       icon: MapPin },
