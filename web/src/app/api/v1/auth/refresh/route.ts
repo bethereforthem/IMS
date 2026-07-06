@@ -122,7 +122,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     refresh_token_hash: newRefreshHash,
     expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
     revoked: false,
-  }).catch(e => console.error('[refresh] session insert:', e))
+  }).then(({ error: e }) => { if (e) console.error('[refresh] session insert:', e.message) })
 
   // 7. Audit the token refresh
   await logAudit({
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     action: 'token_refresh',
     target_type: 'user',
     target_id: user.id,
-    ip_address: req.headers.get('x-forwarded-for') ?? undefined,
+    context: { ip_address: req.headers.get('x-forwarded-for') ?? null },
   })
 
   const response: TokenResponse = {
