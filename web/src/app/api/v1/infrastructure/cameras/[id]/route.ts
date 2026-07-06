@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 import type { AuthPayload } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,37 @@ export const PATCH = withAuth(async (req: NextRequest, { user, params }: { user:
     return apiSuccess(camera)
   } catch (err) {
     console.error('[infrastructure/cameras/[id] PATCH]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'camera_nodes:manage')
+
+// DELETE /api/v1/infrastructure/cameras/[id] — decommissions camera (active = false)
+export const DELETE = withAuth(async (req: NextRequest, { user, params }: { user: AuthPayload; params?: Record<string, string> }) => {
+  try {
+    const id = params?.id
+    if (!id) return apiError('Camera ID required', 400)
+
+    const db = createServerSupabaseClient()
+    const { data: existing } = await db.from('camera_nodes').select('*').eq('id', id).single()
+    if (!existing) return apiError('Camera not found', 404)
+
+    const { data: updated, error } = await db
+      .from('camera_nodes')
+      .update({ active: false })
+      .eq('id', id).select().single()
+
+    if (error) return apiError('Failed to decommission camera', 500)
+
+    await logAudit({
+      event_type: 'CAMERA_DECOMMISSIONED', action: 'DELETE', actor: user,
+      target_type: 'camera_node', target_id: id,
+      before_state: existing, after_state: updated,
+      context: extractAuditContext(req),
+    })
+
+    return apiSuccess({ decommissioned: true, id })
+  } catch (err) {
+    console.error('[infrastructure/cameras/[id] DELETE]', err)
     return apiError('Internal server error', 500)
   }
 }, 'camera_nodes:manage')
