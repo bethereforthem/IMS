@@ -1,15 +1,15 @@
 'use client'
 
-export type MapSoundType = 'criminal' | 'sos' | 'suspect' | 'offline'
+export type MapSoundType = 'criminal' | 'sos' | 'suspect' | 'offline' | 'commander' | 'intrusion'
 
-// Higher number = more critical
+// Higher number = more critical — intrusion is highest (security breach)
 const PRIORITY: Record<MapSoundType, number> = {
-  sos: 4, criminal: 3, suspect: 2, offline: 1,
+  intrusion: 10, commander: 5, sos: 4, criminal: 3, suspect: 2, offline: 1,
 }
 
 // Gap between pattern repetitions (ms)
 const REPEAT_GAP: Record<MapSoundType, number> = {
-  sos: 1500, criminal: 700, suspect: 1200, offline: 1500,
+  intrusion: 300, commander: 600, sos: 1500, criminal: 700, suspect: 1200, offline: 1500,
 }
 
 // ── Singleton AudioContext ─────────────────────────────────────────────────
@@ -32,6 +32,49 @@ function playSingle(type: MapSoundType): number {
   const ac = audioCtx()
   if (!ac) return 0
   const t0 = ac.currentTime
+
+  if (type === 'intrusion') {
+    // Fire-alarm klaxon: rapid alternating sawtooth 960Hz/800Hz, 3 pairs
+    // Highest priority — security breach, immediately distinct from commander klaxon
+    let t = t0
+    for (let pair = 0; pair < 3; pair++) {
+      for (const freq of [960, 800]) {
+        const o = ac.createOscillator(), g = ac.createGain()
+        o.connect(g); g.connect(ac.destination)
+        o.type = 'sawtooth'
+        o.frequency.value = freq
+        g.gain.setValueAtTime(0, t)
+        g.gain.linearRampToValueAtTime(0.45, t + 0.015)
+        g.gain.linearRampToValueAtTime(0.42, t + 0.165)
+        g.gain.linearRampToValueAtTime(0, t + 0.18)
+        o.start(t); o.stop(t + 0.19)
+        t += 0.19
+      }
+      t += 0.04
+    }
+    return Math.ceil((t - t0) * 1000) + 40
+  }
+
+  if (type === 'commander') {
+    // High-authority klaxon: alternating sawtooth 1400 Hz / 900 Hz, 4 rapid pairs
+    // Immediately distinguishable from SOS Morse — loud authority alert
+    let t = t0
+    for (let pair = 0; pair < 4; pair++) {
+      for (const freq of [1400, 900]) {
+        const o = ac.createOscillator(), g = ac.createGain()
+        o.connect(g); g.connect(ac.destination)
+        o.type = 'sawtooth'
+        o.frequency.value = freq
+        g.gain.setValueAtTime(0, t)
+        g.gain.linearRampToValueAtTime(0.38, t + 0.02)
+        g.gain.linearRampToValueAtTime(0, t + 0.13)
+        o.start(t); o.stop(t + 0.15)
+        t += 0.16
+      }
+      t += 0.06 // brief inter-pair gap
+    }
+    return Math.ceil((t - t0) * 1000) + 50
+  }
 
   if (type === 'criminal') {
     // 3 rapid high-pitched square beeps — urgent alarm
