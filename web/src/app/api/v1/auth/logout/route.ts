@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
-import { logAudit } from '@/lib/audit'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 import type { AuthPayload } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
@@ -27,7 +27,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     action: 'logout',
     target_type: 'session',
     target_id: user.session_id,
-    ip_address: req.headers.get('x-forwarded-for') ?? undefined,
+    context: extractAuditContext(req),
   })
 
   return apiSuccess({ message: 'Logged out successfully' })
