@@ -3,23 +3,25 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { DashboardShell, NavItem } from '@/components/shared/DashboardShell'
-import { LayoutDashboard, Search, FileText, AlertTriangle, Activity, Users, BarChart2 } from 'lucide-react'
+import { LayoutDashboard, Search, FileText, AlertTriangle, Activity, Users, BarChart2, Brain } from 'lucide-react'
 
 const investigatorNav: NavItem[] = [
-  { label: 'Investigations', href: '/rib',              icon: LayoutDashboard },
-  { label: 'Suspects',       href: '/rib/suspects',     icon: Search },
-  { label: 'My Cases',       href: '/rib/cases',        icon: FileText },
-  { label: 'Intel Events',   href: '/rib/intelligence', icon: Activity },
-  { label: 'Alerts',         href: '/rib/alerts',       icon: AlertTriangle },
-  { label: 'Analysts',       href: '/rib/team',         icon: Users },
+  { label: 'Investigations',  href: '/rib',              icon: LayoutDashboard },
+  { label: 'Suspects',        href: '/rib/suspects',     icon: Search },
+  { label: 'AI Intelligence', href: '/rib/ai',           icon: Brain },
+  { label: 'My Cases',        href: '/rib/cases',        icon: FileText },
+  { label: 'Intel Events',    href: '/rib/intelligence', icon: Activity },
+  { label: 'Alerts',          href: '/rib/alerts',       icon: AlertTriangle },
+  { label: 'Analysts',        href: '/rib/team',         icon: Users },
 ]
 
 const analystNav: NavItem[] = [
-  { label: 'Intel Analysis', href: '/rib',              icon: BarChart2 },
-  { label: 'Suspects',       href: '/rib/suspects',     icon: Search },
-  { label: 'Cases',          href: '/rib/cases',        icon: FileText },
-  { label: 'Intel Events',   href: '/rib/intelligence', icon: Activity },
-  { label: 'Alerts',         href: '/rib/alerts',       icon: AlertTriangle },
+  { label: 'Intel Analysis',  href: '/rib',              icon: BarChart2 },
+  { label: 'Suspects',        href: '/rib/suspects',     icon: Search },
+  { label: 'AI Intelligence', href: '/rib/ai',           icon: Brain },
+  { label: 'Cases',           href: '/rib/cases',        icon: FileText },
+  { label: 'Intel Events',    href: '/rib/intelligence', icon: Activity },
+  { label: 'Alerts',          href: '/rib/alerts',       icon: AlertTriangle },
 ]
 
 const ALLOWED_ROLES = ['RIB_INVESTIGATOR', 'RIB_ANALYST']
