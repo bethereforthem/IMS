@@ -108,7 +108,7 @@ export const GET = withAuth(async (_req: NextRequest, { user }: { user: AuthPayl
         users!agent_tracking_sessions_agent_id_fkey(
           id, full_name, badge_number, institution, role
         ),
-        field_reports(
+        field_reports!agent_tracking_sessions_field_report_id_fkey(
           id, title, category, priority, status
         )
       `)
