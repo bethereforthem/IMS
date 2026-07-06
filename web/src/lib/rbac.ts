@@ -29,6 +29,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'camera_nodes:manage', 'source_attribution:read',
     'field_reports:read', 'field_reports:write', 'field_reports:assign',
     'agent_tracking:read', 'agent_tracking:manage',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   NISS_OFFICER: new Set([
@@ -45,6 +47,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'source_attribution:read',
     'field_reports:read', 'field_reports:write', 'field_reports:assign',
     'agent_tracking:read', 'agent_tracking:manage',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RNP_COMMANDER: new Set([
@@ -60,6 +64,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'source_attribution:read',
     'field_reports:read', 'field_reports:write',
     'agent_tracking:read',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RNP_DETECTIVE: new Set([
@@ -73,6 +79,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'source_attribution:read',
     'field_reports:read', 'field_reports:write',
     'agent_tracking:read',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RNP_PATROL: new Set([
@@ -95,6 +103,8 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
     'field_reports:read',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RIB_ANALYST: new Set([
@@ -118,6 +128,9 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'source_attribution:read',
     'field_reports:read', 'field_reports:write',
     'agent_tracking:read',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
+    'border:verify', 'border:verify:logs',
   ]),
 
   RDF_BORDER_OFFICER: new Set([
@@ -128,6 +141,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'source_attribution:read',
     'field_reports:write',
     'agent_tracking:read',
+    'border:verify', 'border:verify:logs',
   ]),
 
   RCS_SUPERINTENDENT: new Set([
@@ -137,8 +151,10 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'nid:scan',
     'watchlist:read',
     'revocation:own',
-    'alerts:read',
+    'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'commander_rescue:trigger',
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RCS_OFFICER: new Set([
@@ -169,6 +185,12 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'revocation:own',
     'audit:read',
     'alerts:read',
+    'admin:read',
+    'admin:write',
+    'admin:users',
+    'admin:controls',
+    'admin:security',
+    'admin:analytics',
   ]),
 }
 
@@ -186,8 +208,9 @@ export const CLEARANCE_RANK: Record<string, number> = {
 // Route helpers
 // ---------------------------------------------------------------------------
 export function dashboardRouteForRole(role: string): string {
+  if (role === 'SYSTEM_ADMIN') return '/admin'
   if (role.startsWith('NISS') || role === 'SIEM_ANALYST') return '/niss'
-  if (role.startsWith('RNP') || role === 'SYSTEM_ADMIN') return '/rnp'
+  if (role.startsWith('RNP')) return '/rnp'
   if (role.startsWith('RIB')) return '/rib'
   if (role.startsWith('RDF')) return '/rdf'
   if (role.startsWith('RCS')) return '/rcs'
