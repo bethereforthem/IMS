@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { logAudit } from '@/lib/audit'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/cases/[id]
@@ -105,6 +105,46 @@ export const PATCH = withAuth(async (req: NextRequest, { user, params }) => {
     return apiSuccess(updated)
   } catch (err) {
     console.error('[PATCH /api/v1/cases/[id]]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'cases:write')
+
+// ---------------------------------------------------------------------------
+// DELETE /api/v1/cases/[id]  — soft-delete: sets status = 'ARCHIVED'
+// ---------------------------------------------------------------------------
+export const DELETE = withAuth(async (req: NextRequest, { user, params }) => {
+  try {
+    const id = params?.id
+    if (!id) return apiError('Case ID is required', 400)
+
+    const db = createServerSupabaseClient()
+
+    const { data: existing } = await db.from('cases').select('*').eq('id', id).single()
+    if (!existing) return apiError('Case not found', 404)
+
+    const { data: updated, error } = await db
+      .from('cases')
+      .update({ status: 'ARCHIVED', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return apiError('Failed to archive case', 500)
+
+    await logAudit({
+      event_type: 'CASE_DELETED',
+      action: 'DELETE',
+      actor: user,
+      target_type: 'case',
+      target_id: id,
+      before_state: existing,
+      after_state: updated,
+      context: extractAuditContext(req),
+    })
+
+    return apiSuccess({ archived: true, id })
+  } catch (err) {
+    console.error('[DELETE /api/v1/cases/[id]]', err)
     return apiError('Internal server error', 500)
   }
 }, 'cases:write')
