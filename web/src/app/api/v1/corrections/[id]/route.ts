@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
-import { logAudit } from '@/lib/audit'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/corrections/[id]
@@ -88,6 +88,37 @@ export const PATCH = withAuth(async (req: NextRequest, { user, params }) => {
     return apiSuccess(updated)
   } catch (err) {
     console.error('[PATCH /api/v1/corrections/[id]]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'corrections:write')
+
+// DELETE /api/v1/corrections/[id] — marks record as RELEASED
+export const DELETE = withAuth(async (req: NextRequest, { user, params }) => {
+  try {
+    const id = params?.id
+    if (!id) return apiError('Record ID required', 400)
+
+    const db = createServerSupabaseClient()
+    const { data: existing } = await db.from('corrections_records').select('*').eq('id', id).single()
+    if (!existing) return apiError('Corrections record not found', 404)
+
+    const { data: updated, error } = await db
+      .from('corrections_records')
+      .update({ custody_status: 'RELEASED', actual_release_date: new Date().toISOString().split('T')[0] })
+      .eq('id', id).select().single()
+
+    if (error) return apiError('Failed to release record', 500)
+
+    await logAudit({
+      event_type: 'CORRECTIONS_RELEASED', action: 'DELETE', actor: user,
+      target_type: 'corrections_record', target_id: id,
+      before_state: existing, after_state: updated,
+      context: extractAuditContext(req),
+    })
+
+    return apiSuccess({ released: true, id })
+  } catch (err) {
+    console.error('[DELETE /api/v1/corrections/[id]]', err)
     return apiError('Internal server error', 500)
   }
 }, 'corrections:write')
