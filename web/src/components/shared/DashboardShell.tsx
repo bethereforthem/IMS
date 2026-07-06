@@ -5,6 +5,16 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuth, institutionColor } from '@/hooks/useAuth'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
 import { IdleWarning } from './IdleWarning'
+import { SOSButton } from './SOSButton'
+import { SOSAlertBanner } from './SOSAlertBanner'
+import { CommanderRescueButton } from './CommanderRescueButton'
+import { CommanderRescueAlertBanner } from './CommanderRescueAlertBanner'
+import { OfflineAgentBanner } from './OfflineAgentBanner'
+import { IntrusionAlertBanner } from './IntrusionAlertBanner'
+import { useAgentHeartbeat } from '@/hooks/useAgentHeartbeat'
+import { usePageTracking } from '@/hooks/usePageTracking'
+import { useGeoAudit } from '@/hooks/useGeoAudit'
+import { usePolicyGate } from '@/hooks/usePolicyGate'
 import {
   Shield, LogOut, Bell, ChevronRight, Menu, X, AlertTriangle
 } from 'lucide-react'
@@ -50,6 +60,15 @@ export function DashboardShell({ nav, institutionLabel, children, badge }: Props
 
   // ── Idle session timeout ──────────────────────────────────────────────────
   const { warn, secondsLeft, keepAlive } = useIdleTimeout(handleLogout)
+
+  // Send heartbeat every 20s and detect offline/GPS events for all agents
+  useAgentHeartbeat()
+  // Track page visits for admin monitoring
+  usePageTracking()
+  // Attach GPS coords to all Axios requests for audit logging
+  useGeoAudit()
+  // Redirect to /agree if user hasn't accepted current policies
+  usePolicyGate()
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950">
@@ -169,10 +188,24 @@ export function DashboardShell({ nav, institutionLabel, children, badge }: Props
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          {children}
+        <main className="flex-1 overflow-y-auto">
+          {/* Alert banners — appear at the top of page content */}
+          <div className="px-4 lg:px-6 pt-4 lg:pt-6">
+            {user?.role === 'SYSTEM_ADMIN' && <IntrusionAlertBanner />}
+            <CommanderRescueAlertBanner />
+            <SOSAlertBanner />
+            <OfflineAgentBanner />
+          </div>
+          <div className="px-4 lg:px-6 pb-4 lg:pb-6">
+            {children}
+          </div>
         </main>
       </div>
+
+      {/* Commander rescue button — bottom-right, stacked above SOS (commanders only) */}
+      <CommanderRescueButton />
+      {/* Emergency SOS panic button — visible to all authenticated users */}
+      <SOSButton />
     </div>
   )
 }
