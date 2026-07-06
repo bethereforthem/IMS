@@ -240,12 +240,230 @@ export const partnersApi = {
 // ─── Audit log ───────────────────────────────────────────────────────────────
 
 export const auditApi = {
-  list: (params?: { limit?: number; actor_id?: string; action?: string }) =>
-    api.get<{ entries: Record<string, unknown>[]; total: number }>('/audit', { params }),
+  list: (params?: {
+    page?: number; limit?: number
+    actor_id?: string; actor_name?: string; actor_badge?: string
+    action?: string; event_type?: string
+    target_type?: string; target_id?: string
+    institution?: string; from?: string; to?: string
+  }) =>
+    api.get<{ entries: Record<string, unknown>[]; total: number; action_counts: Record<string, number> }>(
+      '/audit', { params }
+    ),
 }
 
-// ─── Admin ────────────────────────────────────────────────────────────────────
+// ─── Admin Portal ─────────────────────────────────────────────────────────────
 
+export interface AdminUser {
+  id: string
+  badge_number: string
+  full_name: string
+  role: string
+  clearance_level: string
+  institution: string
+  active: boolean
+  locked: boolean
+  mfa_failures: number
+  last_login_at: string | null
+  created_at: string
+}
+
+export interface AdminSession {
+  id: string
+  user_id: string
+  full_name: string | null
+  badge_number: string | null
+  institution: string | null
+  role: string | null
+  ip_address: string | null
+  device_type: string | null
+  browser: string | null
+  os: string | null
+  country_name: string | null
+  country_code: string | null
+  city: string | null
+  is_vpn: boolean
+  is_proxy: boolean
+  current_page: string | null
+  created_at: string
+  last_active_at: string | null
+  expires_at: string
+  revoked: boolean
+}
+
+export interface SecurityIncident {
+  id: string
+  incident_type: string
+  severity: 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  badge_number: string | null
+  full_name: string | null
+  institution: string | null
+  ip_address: string | null
+  country_code: string | null
+  country_name: string | null
+  city: string | null
+  description: string
+  auto_blocked: boolean
+  resolved: boolean
+  resolved_at: string | null
+  resolution_notes: string | null
+  created_at: string
+  alert_id: string | null
+}
+
+export interface SystemControl {
+  key: string
+  value: string
+  description: string | null
+  set_at: string
+}
+
+export interface AdminAnalytics {
+  summary: {
+    total_active_users: number
+    total_logins_24h: number
+    failed_logins_24h: number
+    unresolved_incidents: number
+  }
+  daily_logins: Array<{ date: string; success: number; failed: number }>
+  by_institution: Array<{ name: string; value: number }>
+  by_role: Array<{ name: string; value: number }>
+  by_incident_type: Array<{ name: string; value: number }>
+  top_pages: Array<{ path: string; visits: number }>
+  daily_incidents: Array<{ date: string; count: number }>
+  sessions_by_institution: Array<{ name: string; value: number }>
+}
+
+export const adminPortalApi = {
+  // Users
+  listUsers: () =>
+    api.get<{ users: AdminUser[] }>('/admin/users'),
+  getUser: (id: string) =>
+    api.get<{ user: AdminUser; sessions: AdminSession[]; login_attempts: Record<string, unknown>[] }>(`/admin/users/${id}`),
+  updateUser: (id: string, data: { active?: boolean; locked?: boolean }) =>
+    api.patch<{ updated: boolean }>(`/admin/users/${id}`, data),
+  changeRole: (id: string, role: string) =>
+    api.patch<{ updated: boolean; role: string }>(`/admin/users/${id}/permissions`, { role }),
+  resetCredentials: (id: string, new_password: string) =>
+    api.post<{ reset: boolean }>(`/admin/users/${id}/reset`, { new_password }),
+
+  // Sessions
+  getSessions: (params?: { institution?: string; limit?: number }) =>
+    api.get<{ sessions: AdminSession[]; count: number }>('/admin/sessions', { params }),
+
+  // Security incidents
+  getIncidents: (resolved = false, limit = 50) =>
+    api.get<{ incidents: SecurityIncident[]; count: number }>(`/admin/security?resolved=${resolved}&limit=${limit}`),
+  resolveIncident: (id: string, resolution_notes?: string) =>
+    api.post<{ resolved: boolean }>(`/admin/security/${id}/resolve`, { resolution_notes }),
+
+  // System controls
+  getControls: () =>
+    api.get<{ controls: SystemControl[]; state: Record<string, unknown> }>('/admin/controls'),
+  applyControl: (action: string, target?: string, value?: unknown) =>
+    api.post<{ applied: boolean; action: string; target?: string }>('/admin/controls', { action, target, value }),
+
+  // Analytics
+  getAnalytics: () =>
+    api.get<AdminAnalytics>('/admin/analytics'),
+
+  // Page visit tracking
+  trackPageEnter: (page_path: string, page_title?: string) =>
+    api.post<{ recorded: boolean; visit_id: string | null }>('/admin/page-visits', { event: 'enter', page_path, page_title }),
+  trackPageLeave: (page_path: string, visit_id: string) =>
+    api.post<{ recorded: boolean }>('/admin/page-visits', { event: 'leave', page_path, visit_id }),
+}
+
+// ─── AI Intelligence ──────────────────────────────────────────────────────────
+
+export interface AIPrediction {
+  id: string
+  run_id: string
+  rank: number
+  center_lat: number
+  center_lng: number
+  radius_km: number
+  district: string | null
+  province: string | null
+  confidence_score: number
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  dominant_categories: string[]
+  peak_hours: number[]
+  peak_days: string[]
+  trend_direction: 'INCREASING' | 'STABLE' | 'DECREASING'
+  incident_count_90d: number
+  incident_count_30d: number
+  incident_count_7d: number
+  severity_score: number
+  explanation: string
+  patrol_recommendation: string | null
+  preventive_actions: string[]
+  data_points_used: number
+  institution: string | null
+  valid_until: string
+  created_at: string
+}
+
+export interface AIInsight {
+  id: string
+  run_id: string
+  institution: string | null
+  insight_type: 'TREND_SUMMARY' | 'ANOMALY_ALERT' | 'SEASONAL_PATTERN' | 'PATROL_STRATEGY' | 'RISK_OVERVIEW'
+  title: string
+  content: string
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  created_at: string
+  expires_at: string
+}
+
+export interface AIPredictionRun {
+  id: string
+  institution: string | null
+  total_incidents_analyzed: number
+  time_window_days: number
+  completed_at: string | null
+  created_at: string
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+}
+
+export interface AIAnalysisResult {
+  cached: boolean
+  run_id: string
+  predictions: AIPrediction[]
+  insights: AIInsight[]
+  stats?: {
+    incidents_analyzed: number
+    clusters_found: number
+    temporal_pattern: string
+    top_category: string | null
+    feedback_accuracy: number
+  }
+}
+
+export const aiIntelligenceApi = {
+  analyze: (forceRefresh = false) =>
+    api.post<AIAnalysisResult>('/ai-intelligence/analyze', { force_refresh: forceRefresh }),
+
+  getPredictions: (runId?: string) =>
+    api.get<{
+      run: AIPredictionRun | null
+      predictions: AIPrediction[]
+      insights: AIInsight[]
+      has_data: boolean
+      analysis_in_progress: boolean
+      message?: string
+    }>('/ai-intelligence/predictions' + (runId ? `?run_id=${runId}` : '')),
+
+  submitFeedback: (data: {
+    prediction_id: string
+    accurate: boolean
+    accuracy_rating?: number
+    notes?: string
+    actual_event_id?: string
+  }) => api.post<{ recorded: boolean; accurate: boolean }>('/ai-intelligence/feedback', data),
+}
+
+// Legacy stub kept for backward compat
 export const adminApi = {
   emergencyLockdown: (secondDirectorId: string, reason: string) =>
     api.post('/admin/emergency-lockdown', { second_director_id: secondDirectorId, reason }),
@@ -295,6 +513,91 @@ export const fieldReportsApi = {
     ),
 }
 
+// ─── SOS Emergency ───────────────────────────────────────────────────────────
+
+export const sosApi = {
+  trigger: (data: {
+    location_lat?: number | null
+    location_lng?: number | null
+    location_description?: string
+    notes?: string
+  }) =>
+    api.post<{
+      sent: boolean
+      alert_id: string
+      field_report_id: string | null
+      tracking_session_id: string | null
+    }>('/alerts/sos', data),
+
+  acknowledge: (alert_id: string, notes?: string) =>
+    api.post<{ acknowledged: boolean; alert_id: string }>(
+      '/alerts/sos/acknowledge',
+      { alert_id, notes }
+    ),
+
+  sendPing: (data: {
+    session_id: string
+    lat: number
+    lng: number
+    accuracy_m?: number
+    heading?: number
+  }) => api.post<{ recorded: boolean }>('/agent-tracking/ping', data),
+
+  cancelTracking: (session_id: string) =>
+    api.patch(`/agent-tracking/sessions/${session_id}`, { action: 'close' }),
+
+  getActive: (limit = 20) =>
+    api.get<{ alerts: Alert[]; total: number }>(
+      `/alerts?severity=CRITICAL&is_read=false&requires_action=true&limit=${limit}`
+    ),
+}
+
+// ─── Commander Rescue Emergency ───────────────────────────────────────────────
+
+export const commanderRescueApi = {
+  trigger: (data: {
+    location_lat?: number | null
+    location_lng?: number | null
+    location_description?: string
+    notes?: string
+  }) =>
+    api.post<{
+      sent: boolean
+      alert_id: string
+      field_report_id: string | null
+      tracking_session_id: string | null
+      rescue_teams: string[]
+    }>('/commander-rescue', data),
+
+  acknowledge: (alert_id: string, notes?: string) =>
+    api.post<{ acknowledged: boolean; alert_id: string; acknowledged_by: string }>(
+      '/commander-rescue/acknowledge',
+      { alert_id, notes }
+    ),
+
+  resolve: (alert_id: string, tracking_session_id?: string | null, notes?: string) =>
+    api.post<{ resolved: boolean; alert_id: string; tracking_closed: boolean }>(
+      '/commander-rescue/resolve',
+      { alert_id, tracking_session_id, notes }
+    ),
+
+  sendPing: (data: {
+    session_id: string
+    lat: number
+    lng: number
+    accuracy_m?: number
+    heading?: number
+  }) => api.post<{ recorded: boolean }>('/agent-tracking/ping', data),
+
+  cancelTracking: (session_id: string) =>
+    api.patch(`/agent-tracking/sessions/${session_id}`, { action: 'close' }),
+
+  getActive: (limit = 20) =>
+    api.get<{ alerts: Alert[]; total: number }>(
+      `/commander-rescue?limit=${limit}`
+    ),
+}
+
 // ─── Agent Tracking (commander view) ─────────────────────────────────────────
 
 export interface ActiveAgent {
@@ -314,15 +617,185 @@ export interface ActiveAgent {
   last_ping_at?: string | null
   report_title?: string | null
   report_priority?: string | null
+  // Availability monitoring
+  availability_status: 'ONLINE' | 'OFFLINE' | 'GPS_DISABLED'
+  offline_reason?: 'PHONE_OFF' | 'NO_NETWORK' | 'GPS_DISABLED' | 'APP_TERMINATED' | 'TIMEOUT' | null
+  offline_since?: string | null
+  last_heartbeat_at?: string | null
 }
 
 export const agentTrackingApi = {
   getActiveAgents: () =>
-    api.get<{ agents: ActiveAgent[]; total: number }>('/agent-tracking/agents'),
+    api.get<{ agents: ActiveAgent[]; total: number; offline_count: number }>('/agent-tracking/agents'),
   getPings: (sessionId: string, limit = 500) =>
     api.get<{ pings: Array<{ lat: number; lng: number; pinged_at: string }>; total: number }>(
       `/agent-tracking/sessions/${sessionId}?limit=${limit}`
     ),
   sessionAction: (sessionId: string, action: 'pause' | 'resume' | 'close') =>
     api.patch(`/agent-tracking/sessions/${sessionId}`, { action }),
+}
+
+// ─── Agent Availability / Heartbeat ──────────────────────────────────────────
+
+export const heartbeatApi = {
+  alive: (data?: { location_lat?: number | null; location_lng?: number | null }) =>
+    api.post<{ alive: boolean; was_offline: boolean }>(
+      '/agent-tracking/heartbeat',
+      data ?? {}
+    ),
+  reportOffline: (reason: string, location_lat?: number | null, location_lng?: number | null) =>
+    api.post<{ recorded: boolean; new_alert: boolean; alert_id?: string | null }>(
+      '/agent-tracking/offline',
+      { reason, location_lat, location_lng }
+    ),
+}
+
+// ─── Border Identity Verification ────────────────────────────────────────────
+
+export interface BorderVerifyPayload {
+  doc_type: 'NATIONAL_ID' | 'PASSPORT' | 'REFUGEE_CARD' | 'DRIVERS_LICENSE' | 'OTHER'
+  doc_number?: string | null
+  full_name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  date_of_birth?: string | null
+  nationality?: string | null
+  gender?: string | null
+  expiry_date?: string | null
+  issuing_country?: string | null
+  issuing_authority?: string | null
+  mrz_line1?: string | null
+  mrz_line2?: string | null
+  raw_ocr_text?: string | null
+  scan_method?: 'OCR_AUTO' | 'OCR_ASSISTED' | 'MANUAL' | 'QR_CODE'
+  ocr_confidence?: number | null
+  scan_failed?: boolean
+  scan_failure_reason?: string | null
+  border_post?: string | null
+  location_lat?: number | null
+  location_lng?: number | null
+  device_type?: string | null
+  device_info?: string | null
+  notes?: string | null
+}
+
+export interface BorderVerifyResult {
+  verification_id: string
+  verification_status: 'CLEAN' | 'FLAGGED' | 'EXPIRED_DOC' | 'SCAN_FAILED' | 'MANUAL_REVIEW'
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  doc_expired: boolean
+  suspect_match: boolean
+  warrant_match: boolean
+  watchlist_match: boolean
+  interpol_match: boolean
+  alert_id: string | null
+  suspect: {
+    id: string; ims_reference: string; first_name: string; last_name: string
+    status: string; threat_level: number; date_of_birth: string | null
+    nationality: string | null; passport_number: string | null
+    active_warrants: { id: string; warrant_type: string; charges: string; issued_at: string }[]
+  } | null
+  verified_at: string
+}
+
+export interface BorderVerification {
+  id: string
+  doc_type: string
+  doc_number: string | null
+  full_name: string | null
+  nationality: string | null
+  expiry_date: string | null
+  scan_method: string
+  scan_failed: boolean
+  verification_status: string
+  risk_level: string
+  suspect_match: boolean
+  warrant_match: boolean
+  watchlist_match: boolean
+  interpol_match: boolean
+  border_post: string | null
+  badge_number: string
+  device_type: string | null
+  verified_at: string
+}
+
+export const borderVerifyApi = {
+  verify: (payload: BorderVerifyPayload) =>
+    api.post<BorderVerifyResult>('/border/verify', payload),
+
+  listVerifications: (params?: {
+    page?: number; limit?: number; status?: string
+    doc_type?: string; mine?: boolean; from?: string; to?: string
+  }) => api.get<{
+    verifications: BorderVerification[]
+    total: number; page: number; limit: number; pages: number
+  }>('/border/verifications', { params }),
+}
+
+// ─── Policy Agreement ─────────────────────────────────────────────────────────
+
+export interface PolicyDocument {
+  id: string
+  policy_type: 'TERMS_OF_SERVICE' | 'PRIVACY_POLICY' | 'SECURITY_POLICY' | 'LOCATION_SHARING_POLICY'
+  version: number
+  title: string
+  summary: string
+  content: string
+  is_active: boolean
+  effective_date: string
+  created_by: string | null
+  created_by_name: string | null
+  created_at: string
+  acceptance_count?: number
+}
+
+export interface PolicyAcceptance {
+  id: string
+  full_name: string | null
+  badge_number: string | null
+  institution: string | null
+  role: string | null
+  accepted_at: string
+  ip_address: string | null
+  device_info: string | null
+  gps_lat: number | null
+  gps_lng: number | null
+}
+
+export const policyApi = {
+  getPending: () =>
+    api.get<{
+      pending: PolicyDocument[]
+      all_accepted: boolean
+      total_policies: number
+      accepted_count: number
+    }>('/policies/pending'),
+
+  accept: (policy_ids: string[]) =>
+    api.post<{ accepted: number; policy_types: string[] }>('/policies/accept', { policy_ids }),
+}
+
+export const adminPolicyApi = {
+  list: () =>
+    api.get<{ policies: PolicyDocument[]; total: number }>('/admin/policies'),
+
+  create: (data: {
+    policy_type: string
+    title: string
+    summary: string
+    content: string
+    effective_date?: string
+  }) => api.post<{ policy: PolicyDocument }>('/admin/policies', data),
+
+  update: (id: string, data: {
+    title?: string
+    summary?: string
+    content?: string
+    effective_date?: string
+  }) => api.patch<{ policy: PolicyDocument }>(`/admin/policies/${id}`, data),
+
+  get: (id: string) =>
+    api.get<{ policy: PolicyDocument; acceptances: PolicyAcceptance[]; acceptance_count: number }>(
+      `/admin/policies/${id}`
+    ),
 }
