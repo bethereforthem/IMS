@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createHash, randomUUID } from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { verifyToken, signToken } from '@/lib/jwt'
-import { logAudit } from '@/lib/audit'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 import { apiError } from '@/lib/api-middleware'
 import type { TokenResponse } from '@/types'
 
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return apiError('session_token and otp are required', 400)
   }
 
-  const ipAddress = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? undefined
+  const ctx = extractAuditContext(req)
 
   // 2. Verify the step token and check that it is an OTP-pending token
   let stepPayload: Record<string, unknown>
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       action: 'invalid_otp',
       target_type: 'user',
       target_id: userId,
-      ip_address: ipAddress,
+      context: ctx,
     })
     return apiError('Invalid or expired OTP', 401)
   }
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     refresh_token_hash: refreshHash,
     expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
     revoked: false,
-  }).catch(e => console.error('[verify-otp] session insert:', e))
+  }).then(({ error: e }) => { if (e) console.error('[verify-otp] session insert:', e.message) })
 
   // 11. Update last_login_at and reset MFA failure counter
   await db
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     action: 'login_success',
     target_type: 'user',
     target_id: user.id,
-    ip_address: ipAddress,
+    context: ctx,
   })
 
   // 13. Return TokenResponse
