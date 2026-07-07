@@ -56,7 +56,7 @@ class _FaceScanScreenState extends ConsumerState<FaceScanScreen> {
 
       Position? position;
       try {
-        position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
       } catch (_) {}
 
       final api = ref.read(apiClientProvider);

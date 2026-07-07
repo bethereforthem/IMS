@@ -86,9 +86,9 @@ class _AlertCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: _priorityColor.withOpacity(0.1),
+        color: _priorityColor.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _priorityColor.withOpacity(0.4)),
+        border: Border.all(color: _priorityColor.withValues(alpha:0.4)),
       ),
       child: ListTile(
         leading: Container(

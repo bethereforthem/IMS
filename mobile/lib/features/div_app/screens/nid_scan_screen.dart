@@ -7,7 +7,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 import '../../../core/network/api_client.dart';
-import '../providers/div_provider.dart';
 
 class NidScanScreen extends ConsumerStatefulWidget {
   const NidScanScreen({super.key});
@@ -19,7 +18,6 @@ class NidScanScreen extends ConsumerStatefulWidget {
 class _NidScanScreenState extends ConsumerState<NidScanScreen> {
   CameraController? _camera;
   bool _scanning = false;
-  String? _extractedNid;
   String? _statusMessage;
 
   @override
@@ -61,7 +59,7 @@ class _NidScanScreenState extends ConsumerState<NidScanScreen> {
         return;
       }
 
-      setState(() { _extractedNid = nid; _statusMessage = 'ID number extracted — verifying...'; });
+      setState(() { _statusMessage = 'ID number extracted — verifying...'; });
       await _submitVerification(nid);
     } catch (e) {
       setState(() { _statusMessage = 'Error: $e'; _scanning = false; });
@@ -80,7 +78,7 @@ class _NidScanScreenState extends ConsumerState<NidScanScreen> {
       Position? position;
       try {
         position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
         );
       } catch (_) {}
 

@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'core/auth/auth_provider.dart';
-import 'core/network/api_client.dart';
 import 'core/router.dart';
 
 void main() async {
@@ -20,9 +17,9 @@ class IMSApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(routerProvider);
+    final router = ref.read(routerProvider);
     return MaterialApp.router(
-      title: 'IMS Rwanda',
+      title: 'IMS',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
       routerConfig: router,

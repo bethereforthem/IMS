@@ -28,12 +28,12 @@ class _PatrolDashboardState extends ConsumerState<PatrolDashboard> {
     final api = ref.read(apiClientProvider);
     try {
       final results = await Future.wait([
-        api.get('/alerts?limit=8&unread_only=true'),
-        api.get('/intelligence/events?limit=10'),
+        api.getAlerts(limit: 8),
+        api.getEvents(limit: 10),
       ]);
       if (mounted) setState(() {
-        _alerts = results[0].data as List? ?? [];
-        _myEvents = results[1].data as List? ?? [];
+        _alerts = results[0];
+        _myEvents = results[1];
         _loading = false;
       });
     } catch (_) {
@@ -43,7 +43,7 @@ class _PatrolDashboardState extends ConsumerState<PatrolDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).valueOrNull;
+    final user = ref.watch(authStateProvider).valueOrNull;
     final isIrondo = user?.role == 'IRONDO_PATROL';
     final color = const Color(0xFF6B7280);
     final label = isIrondo ? 'Irondo Patrol' : 'Dasso Officer';
@@ -59,19 +59,19 @@ class _PatrolDashboardState extends ConsumerState<PatrolDashboard> {
         ]),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _load),
-          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authProvider.notifier).logout()),
+          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authStateProvider.notifier).logout()),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : IndexedStack(index: _tab, children: [
               _HomeTab(user: user, alerts: _alerts, events: _myEvents, color: color),
-              const DIVHomeScreen(),
+              const DivHomeScreen(),
               _AlertsTab(alerts: _alerts),
             ]),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: color.withOpacity(0.3),
+        indicatorColor: color.withValues(alpha: 0.3),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -98,8 +98,8 @@ class _HomeTab extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          color: color.withValues(alpha:0.15), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha:0.3)),
         ),
         child: Row(children: [
           Icon(Icons.badge, color: color, size: 20),
@@ -116,8 +116,8 @@ class _HomeTab extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E3A5F).withOpacity(0.5), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF1D4ED8).withOpacity(0.3)),
+          color: const Color(0xFF1E3A5F).withValues(alpha:0.5), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF1D4ED8).withValues(alpha:0.3)),
         ),
         child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(Icons.info_outline, color: Color(0xFF60A5FA), size: 18),
@@ -160,7 +160,7 @@ class _HomeTab extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: found ? const Color(0xFF7F1D1D).withOpacity(0.6) : const Color(0xFF334155)),
+              border: Border.all(color: found ? const Color(0xFF7F1D1D).withValues(alpha:0.6) : const Color(0xFF334155)),
             ),
             child: Row(children: [
               Icon(Icons.circle, color: found ? const Color(0xFFDC2626) : const Color(0xFF16A34A), size: 8),
@@ -189,8 +189,8 @@ class _ActionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: color.withValues(alpha:0.1), borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha:0.3)),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, color: color, size: 24),

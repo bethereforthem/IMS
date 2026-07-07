@@ -30,15 +30,14 @@ class _RIBDashboardState extends ConsumerState<RIBDashboard> {
     final api = ref.read(apiClientProvider);
     try {
       final results = await Future.wait([
-        api.get('/dashboard/stats'),
-        api.get('/cases?limit=15'),
-        api.get('/alerts?limit=8&unread_only=true'),
+        api.getDashboardStats(),
+        api.getCases(limit: 15),
+        api.getAlerts(limit: 8),
       ]);
       if (mounted) setState(() {
-        _stats = results[0].data as Map<String, dynamic>;
-        final cdata = results[1].data;
-        _cases = (cdata is Map ? cdata['cases'] : cdata) as List? ?? [];
-        _alerts = results[2].data as List? ?? [];
+        _stats = results[0] as Map<String, dynamic>? ?? {};
+        _cases = results[1] as List<dynamic>;
+        _alerts = results[2] as List<dynamic>;
         _loading = false;
       });
     } catch (_) {
@@ -48,7 +47,7 @@ class _RIBDashboardState extends ConsumerState<RIBDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).valueOrNull;
+    final user = ref.watch(authStateProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -61,7 +60,7 @@ class _RIBDashboardState extends ConsumerState<RIBDashboard> {
         ]),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _load),
-          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authProvider.notifier).logout()),
+          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authStateProvider.notifier).logout()),
         ],
       ),
       body: _loading
@@ -70,11 +69,11 @@ class _RIBDashboardState extends ConsumerState<RIBDashboard> {
               _InvestTab(stats: _stats, cases: _cases, user: user),
               _CasesTab(cases: _cases),
               _AlertsTab(alerts: _alerts),
-              const DIVHomeScreen(),
+              const DivHomeScreen(),
             ]),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: const Color(0xFF0F766E).withOpacity(0.3),
+        indicatorColor: const Color(0xFF0F766E).withValues(alpha: 0.3),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -102,9 +101,9 @@ class _InvestTab extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F766E).withOpacity(0.15),
+          color: const Color(0xFF0F766E).withValues(alpha:0.15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.3)),
+          border: Border.all(color: const Color(0xFF0F766E).withValues(alpha:0.3)),
         ),
         child: Row(children: [
           const Icon(Icons.badge, color: Color(0xFF0F766E), size: 20),

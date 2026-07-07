@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-const _baseUrl = String.fromEnvironment('IMS_API_URL', defaultValue: 'http://10.0.2.2:8000/api/v1');
+const _baseUrl = String.fromEnvironment('IMS_API_URL', defaultValue: 'http://192.168.30.223:3000/api/v1');
 
 class IMSApiClient {
   final Dio _dio;
@@ -14,8 +13,8 @@ class IMSApiClient {
   static Dio _buildDio() {
     final dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 20),
+      receiveTimeout: const Duration(seconds: 60),
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -62,13 +61,11 @@ class IMSApiClient {
   Future<Map<String, dynamic>> login({
     required String badgeNumber,
     required String password,
-    required String totpCode,
     required String deviceId,
   }) async {
     final r = await _dio.post('/auth/login', data: {
       'badge_number': badgeNumber,
       'password': password,
-      'totp_code': totpCode,
       'device_id': deviceId,
     });
     return r.data as Map<String, dynamic>;
@@ -144,12 +141,53 @@ class IMSApiClient {
   // ---- Alerts ----
 
   Future<List<dynamic>> listAlerts({bool acknowledged = false}) async {
-    final r = await _dio.get('/admin/alerts', queryParameters: {'acknowledged': acknowledged});
-    return r.data as List<dynamic>;
+    final r = await _dio.get('/alerts', queryParameters: {
+      'is_read': acknowledged,
+      'limit': 50,
+    });
+    final body = r.data;
+    if (body is Map && body['alerts'] is List) return body['alerts'] as List<dynamic>;
+    if (body is List) return body;
+    return [];
   }
 
   Future<void> acknowledgeAlert(String alertId) async {
-    await _dio.post('/admin/alerts/$alertId/acknowledge');
+    await _dio.post('/alerts/$alertId/read');
+  }
+
+  // ---- Dashboard helpers ----
+
+  Future<Map<String, dynamic>> getDashboardStats() async {
+    final r = await _dio.get('/dashboard/stats');
+    return r.data as Map<String, dynamic>? ?? {};
+  }
+
+  Future<List<dynamic>> getAlerts({int limit = 8, bool unreadOnly = true}) async {
+    return listAlerts(acknowledged: !unreadOnly);
+  }
+
+  Future<List<dynamic>> getEvents({int limit = 12}) async {
+    final r = await _dio.get('/intelligence/events', queryParameters: {'limit': limit});
+    final body = r.data;
+    if (body is Map && body['events'] is List) return body['events'] as List<dynamic>;
+    if (body is List) return body;
+    return [];
+  }
+
+  Future<List<dynamic>> getCases({int limit = 15}) async {
+    final r = await _dio.get('/cases', queryParameters: {'limit': limit});
+    final body = r.data;
+    if (body is Map && body['cases'] is List) return body['cases'] as List<dynamic>;
+    if (body is List) return body;
+    return [];
+  }
+
+  Future<List<dynamic>> getWanted({int limit = 20}) async {
+    final r = await _dio.get('/suspects', queryParameters: {'status': 'WANTED', 'limit': limit});
+    final body = r.data;
+    if (body is Map && body['suspects'] is List) return body['suspects'] as List<dynamic>;
+    if (body is List) return body;
+    return [];
   }
 
   // Generic REST helpers used by dashboard screens

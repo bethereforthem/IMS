@@ -30,15 +30,15 @@ class _NISSDashboardState extends ConsumerState<NISSDashboard> {
     final api = ref.read(apiClientProvider);
     try {
       final results = await Future.wait([
-        api.get('/dashboard/stats'),
-        api.get('/alerts?limit=8&unread_only=true'),
-        api.get('/intelligence/events?limit=12'),
+        api.getDashboardStats(),
+        api.getAlerts(limit: 8),
+        api.getEvents(limit: 12),
       ]);
       if (mounted) {
         setState(() {
-          _stats = results[0].data as Map<String, dynamic>;
-          _alerts = results[1].data as List;
-          _events = results[2].data as List;
+          _stats = results[0] as Map<String, dynamic>? ?? {};
+          _alerts = results[1] as List<dynamic>;
+          _events = results[2] as List<dynamic>;
           _loading = false;
         });
       }
@@ -49,7 +49,7 @@ class _NISSDashboardState extends ConsumerState<NISSDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).valueOrNull;
+    final user = ref.watch(authStateProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -67,7 +67,7 @@ class _NISSDashboardState extends ConsumerState<NISSDashboard> {
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () async {
-              await ref.read(authProvider.notifier).logout();
+              await ref.read(authStateProvider.notifier).logout();
             },
           ),
         ],
@@ -79,12 +79,12 @@ class _NISSDashboardState extends ConsumerState<NISSDashboard> {
               children: [
                 _CommandCenter(stats: _stats, alerts: _alerts, events: _events, user: user),
                 _AlertsTab(alerts: _alerts),
-                const DIVHomeScreen(),
+                const DivHomeScreen(),
               ],
             ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: const Color(0xFF7C3AED).withOpacity(0.3),
+        indicatorColor: const Color(0xFF7C3AED).withValues(alpha: 0.3),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -117,9 +117,9 @@ class _CommandCenter extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFF7C3AED).withOpacity(0.15),
+              color: const Color(0xFF7C3AED).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.3)),
+              border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [

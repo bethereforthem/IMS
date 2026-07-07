@@ -30,16 +30,15 @@ class _RNPDashboardState extends ConsumerState<RNPDashboard> {
     final api = ref.read(apiClientProvider);
     try {
       final results = await Future.wait([
-        api.get('/dashboard/stats'),
-        api.get('/suspects?status=WANTED&limit=20'),
-        api.get('/alerts?limit=8&unread_only=true'),
+        api.getDashboardStats(),
+        api.getWanted(limit: 20),
+        api.getAlerts(limit: 8),
       ]);
       if (mounted) {
         setState(() {
-          _stats = results[0].data as Map<String, dynamic>;
-          final wdata = results[1].data;
-          _wanted = (wdata is Map ? wdata['suspects'] : wdata) as List? ?? [];
-          _alerts = results[2].data as List? ?? [];
+          _stats = results[0] as Map<String, dynamic>? ?? {};
+          _wanted = results[1] as List<dynamic>;
+          _alerts = results[2] as List<dynamic>;
           _loading = false;
         });
       }
@@ -50,7 +49,7 @@ class _RNPDashboardState extends ConsumerState<RNPDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).valueOrNull;
+    final user = ref.watch(authStateProvider).valueOrNull;
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
@@ -66,7 +65,7 @@ class _RNPDashboardState extends ConsumerState<RNPDashboard> {
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _load),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () async => ref.read(authProvider.notifier).logout(),
+            onPressed: () async => ref.read(authStateProvider.notifier).logout(),
           ),
         ],
       ),
@@ -78,12 +77,12 @@ class _RNPDashboardState extends ConsumerState<RNPDashboard> {
                 _OperationsTab(stats: _stats, wanted: _wanted, user: user),
                 _WantedTab(wanted: _wanted),
                 _AlertsTab(alerts: _alerts),
-                const DIVHomeScreen(),
+                const DivHomeScreen(),
               ],
             ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: const Color(0xFF1D4ED8).withOpacity(0.3),
+        indicatorColor: const Color(0xFF1D4ED8).withValues(alpha: 0.3),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -111,9 +110,9 @@ class _OperationsTab extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF1D4ED8).withOpacity(0.15),
+            color: const Color(0xFF1D4ED8).withValues(alpha:0.15),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF1D4ED8).withOpacity(0.3)),
+            border: Border.all(color: const Color(0xFF1D4ED8).withValues(alpha:0.3)),
           ),
           child: Row(children: [
             const Icon(Icons.badge, color: Color(0xFF1D4ED8), size: 20),
@@ -151,7 +150,7 @@ class _OperationsTab extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.3)),
+              border: Border.all(color: const Color(0xFFDC2626).withValues(alpha:0.3)),
             ),
             child: Row(children: [
               const Icon(Icons.person, color: Color(0xFFDC2626), size: 18),
@@ -195,7 +194,7 @@ class _WantedTab extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: const Color(0xFFDC2626).withOpacity(0.15), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: const Color(0xFFDC2626).withValues(alpha:0.15), shape: BoxShape.circle),
               child: const Icon(Icons.person, color: Color(0xFFDC2626), size: 22),
             ),
             const SizedBox(width: 12),

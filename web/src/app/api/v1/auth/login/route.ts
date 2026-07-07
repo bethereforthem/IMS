@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'crypto'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { signToken } from '@/lib/jwt'
 import { logAudit } from '@/lib/audit'
+import { institutionForRole } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
 
@@ -176,13 +177,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       geoLookup(rawIp),
     ])
 
-    // 3. Fetch user
+    // 3. Fetch user (no `institution` column — derived from role via institutionForRole)
     const { data: user, error: userError } = await db
       .from('users')
-      .select('id, badge_number, full_name, role, clearance_level, institution, active, locked, mfa_failures, password_hash')
+      .select('id, badge_number, full_name, role, clearance_level, active, locked, mfa_failures, password_hash')
       .eq('badge_number', badge_number)
       .eq('active', true)
       .single()
+    const institution = user ? institutionForRole(user.role as string) : ''
 
     if (userError || !user) {
       // Log failed attempt
@@ -209,7 +211,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         user_agent: userAgentRaw || null,
         ...ua, ...geo,
         failure_reason: 'ACCOUNT_LOCKED',
-        full_name: user.full_name, institution: user.institution, role: user.role,
+        full_name: user.full_name, institution: institution, role: user.role,
       }).then(({ error: e }) => { if (e) console.error('[login] attempt log:', e.message) })
 
       return NextResponse.json({ error: 'Account is locked. Contact your security officer.' }, { status: 403 })
@@ -228,7 +230,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         user_agent: userAgentRaw || null,
         ...ua, ...geo,
         failure_reason: 'INVALID_PASSWORD',
-        full_name: user.full_name, institution: user.institution, role: user.role,
+        full_name: user.full_name, institution: institution, role: user.role,
       }).then(({ error: e }) => { if (e) console.error('[login] attempt log:', e.message) })
 
       await logAudit({ event_type: 'AUTH_FAILED', action: 'invalid_password', target_type: 'user', target_id: user.id as string, context: { ip_address: rawIp } }).catch(() => {})
@@ -250,7 +252,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             user_id: user.id as string,
             badge_number,
             full_name: user.full_name as string,
-            institution: user.institution as string,
+            institution: institution as string,
             ip_address: rawIp,
             ...geo,
             description: `Credential stuffing detected: ${count} failed login attempts from IP ${rawIp} in 10 minutes.`,
@@ -273,7 +275,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         user_id: user.id,
         badge_number: user.badge_number,
         full_name: user.full_name,
-        institution: user.institution,
+        institution: institution,
         role: user.role,
         clearance: user.clearance_level,
         clearance_level: user.clearance_level,
@@ -302,7 +304,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ...geo,
       full_name: user.full_name,
       badge_number: user.badge_number,
-      institution: user.institution,
+      institution: institution,
       role: user.role,
       last_active_at: new Date().toISOString(),
     }).then(({ error: e }) => { if (e) console.error('[login] session insert:', e.message) })
@@ -314,7 +316,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ip_address: rawIp || null,
       user_agent: userAgentRaw || null,
       ...ua, ...geo,
-      full_name: user.full_name, institution: user.institution, role: user.role,
+      full_name: user.full_name, institution: institution, role: user.role,
     }).then(({ error: e }) => { if (e) console.error('[login] attempt log:', e.message) })
 
     // 9. Update last login + reset failures
@@ -327,7 +329,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       session_id,
       badge_number: user.badge_number as string,
       full_name: user.full_name as string,
-      institution: user.institution as string,
+      institution: institution as string,
       ip_address: rawIp,
       geo,
     }).catch(e => console.error('[login:IDS] background check failed:', e))
@@ -343,7 +345,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         id: user.id,
         badge_number: user.badge_number,
         full_name: user.full_name,
-        institution: user.institution,
+        institution: institution,
         role: user.role,
         clearance_level: user.clearance_level,
         session_id,

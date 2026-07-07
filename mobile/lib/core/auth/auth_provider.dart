@@ -1,10 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../network/api_client.dart';
 
 const _storage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  aOptions: AndroidOptions(),
   iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
 );
 
@@ -15,6 +17,8 @@ class AuthState {
   final String institution;
   final String clearance;
   final String userId;
+  final String fullName;
+  final String badgeNumber;
 
   const AuthState({
     required this.accessToken,
@@ -23,6 +27,8 @@ class AuthState {
     required this.institution,
     required this.clearance,
     required this.userId,
+    this.fullName = '',
+    this.badgeNumber = '',
   });
 }
 
@@ -35,22 +41,25 @@ class AuthNotifier extends AsyncNotifier<AuthState?> {
     final institution = await _storage.read(key: 'institution');
     final clearance = await _storage.read(key: 'clearance');
     final userId = await _storage.read(key: 'user_id');
+    final fullName = await _storage.read(key: 'full_name');
+    final badgeNumber = await _storage.read(key: 'badge_number');
 
     if (token == null || role == null) return null;
     return AuthState(
       accessToken: token,
-      refreshToken: refresh!,
+      refreshToken: refresh ?? '',
       role: role,
-      institution: institution!,
-      clearance: clearance!,
-      userId: userId!,
+      institution: institution ?? '',
+      clearance: clearance ?? '',
+      userId: userId ?? '',
+      fullName: fullName ?? '',
+      badgeNumber: badgeNumber ?? '',
     );
   }
 
   Future<void> login({
     required String badgeNumber,
     required String password,
-    required String totpCode,
     required String deviceId,
   }) async {
     state = const AsyncValue.loading();
@@ -59,30 +68,41 @@ class AuthNotifier extends AsyncNotifier<AuthState?> {
       final response = await api.login(
         badgeNumber: badgeNumber,
         password: password,
-        totpCode: totpCode,
         deviceId: deviceId,
       );
 
       // Parse JWT claims
       final claims = _parseJwtClaims(response['access_token'] as String);
 
+      final jwtRole = (claims['role'] ?? '') as String;
+      final jwtInstitution = (claims['institution'] ?? '') as String;
+      final jwtClearance = (claims['clearance'] ?? claims['clearance_level'] ?? '') as String;
+      final jwtUserId = (claims['sub'] ?? claims['user_id'] ?? '') as String;
+      final jwtFullName = (claims['full_name'] ?? '') as String;
+      final jwtBadgeNumber = (claims['badge_number'] ?? badgeNumber) as String;
+
       await _storage.write(key: 'access_token', value: response['access_token'] as String);
       await _storage.write(key: 'refresh_token', value: response['refresh_token'] as String);
-      await _storage.write(key: 'role', value: claims['role'] as String);
-      await _storage.write(key: 'institution', value: claims['institution'] as String);
-      await _storage.write(key: 'clearance', value: claims['clearance'] as String);
-      await _storage.write(key: 'user_id', value: claims['sub'] as String);
+      await _storage.write(key: 'role', value: jwtRole);
+      await _storage.write(key: 'institution', value: jwtInstitution);
+      await _storage.write(key: 'clearance', value: jwtClearance);
+      await _storage.write(key: 'user_id', value: jwtUserId);
+      await _storage.write(key: 'full_name', value: jwtFullName);
+      await _storage.write(key: 'badge_number', value: jwtBadgeNumber);
 
       state = AsyncValue.data(AuthState(
         accessToken: response['access_token'] as String,
         refreshToken: response['refresh_token'] as String,
-        role: claims['role'] as String,
-        institution: claims['institution'] as String,
-        clearance: claims['clearance'] as String,
-        userId: claims['sub'] as String,
+        role: jwtRole,
+        institution: jwtInstitution,
+        clearance: jwtClearance,
+        userId: jwtUserId,
+        fullName: jwtFullName,
+        badgeNumber: jwtBadgeNumber,
       ));
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+      rethrow;
     }
   }
 
@@ -94,7 +114,6 @@ class AuthNotifier extends AsyncNotifier<AuthState?> {
   Map<String, dynamic> _parseJwtClaims(String token) {
     final parts = token.split('.');
     if (parts.length != 3) return {};
-    import 'dart:convert';
     final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
     return jsonDecode(payload) as Map<String, dynamic>;
   }

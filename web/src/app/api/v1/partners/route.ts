@@ -23,7 +23,7 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
       .from('international_partners')
       .select('*')
       .eq('active', true)
-      .order('name', { ascending: true })
+      .order('country_name', { ascending: true })
 
     if (error) {
       console.error('[partners GET]', error)

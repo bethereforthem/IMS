@@ -30,7 +30,7 @@ class _NidManualScreenState extends ConsumerState<NidManualScreen> {
     try {
       Position? position;
       try {
-        position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
       } catch (_) {}
 
       final api = ref.read(apiClientProvider);
@@ -108,7 +108,7 @@ class _NidManualScreenState extends ConsumerState<NidManualScreen> {
                   prefixIcon: const Icon(Icons.credit_card, color: Colors.white54),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.05),
+                  fillColor: Colors.white.withValues(alpha:0.05),
                 ),
                 onChanged: (_) => setState(() {}),
                 validator: (v) {

@@ -14,7 +14,7 @@ class RoleDashboardDispatcher extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authProvider);
+    final auth = ref.watch(authStateProvider);
 
     return auth.when(
       loading: () => const Scaffold(
@@ -41,10 +41,11 @@ class RoleDashboardDispatcher extends ConsumerWidget {
         if (role.startsWith('RCS')) {
           return const RCSDashboard();
         }
-        if (role == 'IRONDO_PATROL' || role == 'DASSO_OFFICER') {
+        if (role == 'VILLAGE_LEADER' || role == 'IRONDO_PATROL' || role == 'DASSO_OFFICER') {
           return const PatrolDashboard();
         }
-        return const LoginScreen();
+        // Unknown role — show a generic screen rather than login
+        return const PatrolDashboard();
       },
     );
   }

@@ -30,15 +30,14 @@ class _RCSDashboardState extends ConsumerState<RCSDashboard> {
     final api = ref.read(apiClientProvider);
     try {
       final results = await Future.wait([
-        api.get('/dashboard/stats'),
-        api.get('/suspects?status=IN_CUSTODY&limit=20'),
-        api.get('/alerts?limit=8&unread_only=true'),
+        api.getDashboardStats(),
+        api.getAlerts(limit: 8),
       ]);
+      final suspects = await api.listSuspects(status: 'IN_CUSTODY');
       if (mounted) setState(() {
-        _stats = results[0].data as Map<String, dynamic>;
-        final cdata = results[1].data;
-        _custody = (cdata is Map ? cdata['suspects'] : cdata) as List? ?? [];
-        _alerts = results[2].data as List? ?? [];
+        _stats = results[0] as Map<String, dynamic>? ?? {};
+        _custody = suspects['suspects'] as List? ?? [];
+        _alerts = results[1] as List<dynamic>;
         _loading = false;
       });
     } catch (_) {
@@ -48,7 +47,7 @@ class _RCSDashboardState extends ConsumerState<RCSDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authProvider).valueOrNull;
+    final user = ref.watch(authStateProvider).valueOrNull;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -61,7 +60,7 @@ class _RCSDashboardState extends ConsumerState<RCSDashboard> {
         ]),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: _load),
-          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authProvider.notifier).logout()),
+          IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => ref.read(authStateProvider.notifier).logout()),
         ],
       ),
       body: _loading
@@ -70,11 +69,11 @@ class _RCSDashboardState extends ConsumerState<RCSDashboard> {
               _CustodyTab(stats: _stats, custody: _custody, user: user),
               _InmatesTab(custody: _custody),
               _AlertsTab(alerts: _alerts),
-              const DIVHomeScreen(),
+              const DivHomeScreen(),
             ]),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: const Color(0xFFB45309).withOpacity(0.3),
+        indicatorColor: const Color(0xFFB45309).withValues(alpha: 0.3),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -100,8 +99,8 @@ class _CustodyTab extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFB45309).withOpacity(0.15), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFB45309).withOpacity(0.3)),
+          color: const Color(0xFFB45309).withValues(alpha:0.15), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFB45309).withValues(alpha:0.3)),
         ),
         child: Row(children: [
           const Icon(Icons.badge, color: Color(0xFFB45309), size: 20),
@@ -132,8 +131,8 @@ class _CustodyTab extends StatelessWidget {
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFD97706).withOpacity(0.1), borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFD97706).withOpacity(0.4)),
+          color: const Color(0xFFD97706).withValues(alpha:0.1), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFD97706).withValues(alpha:0.4)),
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Icon(Icons.warning_amber, color: Color(0xFFD97706), size: 18),
@@ -191,7 +190,7 @@ class _InmatesTab extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: const Color(0xFFB45309).withOpacity(0.15), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: const Color(0xFFB45309).withValues(alpha:0.15), shape: BoxShape.circle),
               child: const Icon(Icons.person, color: Color(0xFFB45309), size: 22),
             ),
             const SizedBox(width: 12),

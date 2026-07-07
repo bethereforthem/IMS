@@ -21,9 +21,9 @@ class StatTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha:0.12),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha:0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,13 +34,13 @@ class StatTile extends StatelessWidget {
               Icon(icon, color: color, size: 18),
               const Spacer(),
               if (sub != null)
-                Text(sub!, style: TextStyle(color: color.withOpacity(0.8), fontSize: 10, fontWeight: FontWeight.w600)),
+                Text(sub!, style: TextStyle(color: color.withValues(alpha:0.8), fontSize: 10, fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: 10),
           Text(value, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
           const SizedBox(height: 2),
-          Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11)),
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha:0.5), fontSize: 11)),
         ],
       ),
     );
