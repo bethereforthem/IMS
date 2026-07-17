@@ -4,9 +4,19 @@ import { X, FolderPlus, Loader2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { casesApi } from '@/lib/api'
 
+export interface CreatedCaseData {
+  id: string
+  case_reference: string
+  title: string
+  clearance_level: string
+  lead_institution: string
+  category: string
+  location_name?: string
+}
+
 interface Props {
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (createdCase: CreatedCaseData) => void
 }
 
 const INPUT = 'w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none'
@@ -37,7 +47,7 @@ export function AddCaseModal({ onClose, onSuccess }: Props) {
     setSubmitting(true)
     setError(null)
     try {
-      await casesApi.create({
+      const result = await casesApi.create({
         title: form.title.trim(),
         category: form.category,
         status: form.status,
@@ -47,10 +57,19 @@ export function AddCaseModal({ onClose, onSuccess }: Props) {
         incident_date: form.incident_date || undefined,
         location_name: form.location_name.trim() || undefined,
       })
-      onSuccess()
+      const raw = result.data as unknown as CreatedCaseData
+      onSuccess({
+        id: raw.id,
+        case_reference: raw.case_reference,
+        title: form.title.trim(),
+        clearance_level: raw.clearance_level ?? form.clearance_level,
+        lead_institution: raw.lead_institution ?? form.lead_institution,
+        category: form.category,
+        location_name: form.location_name.trim() || undefined,
+      })
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } }
-      setError(e.response?.data?.message ?? 'Failed to create case.')
+      const e = err as { response?: { data?: { error?: string; message?: string } } }
+      setError(e.response?.data?.error ?? e.response?.data?.message ?? 'Failed to create case. Check your connection and try again.')
     } finally {
       setSubmitting(false)
     }
@@ -146,7 +165,7 @@ export function AddCaseModal({ onClose, onSuccess }: Props) {
             <button type="submit" disabled={submitting}
               className="flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-50 transition">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Open Case
+              Add Case
             </button>
           </div>
         </form>
