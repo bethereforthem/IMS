@@ -89,7 +89,10 @@ export const suspectsApi = {
     threat_level?: number
     nationality?: string
     clearance_level?: string
+    date_of_birth?: string
     notes?: string
+    known_associates?: string[]
+    distinguishing_marks?: string
   }) => api.post<Suspect>('/suspects', data),
 }
 
@@ -162,6 +165,22 @@ export const cameraApi = {
 export const casesApi = {
   list: (params?: { status?: string; limit?: number }) =>
     api.get<{ cases: Case[]; total: number }>('/cases', { params }),
+  get: (id: string) =>
+    api.get<Case & {
+      category?: string
+      summary?: string
+      incident_date?: string
+      location_name?: string
+      suspects?: Array<{
+        id: string
+        full_name: string
+        ims_reference: string
+        status: string
+        threat_level?: string
+        role?: string
+        added_at?: string
+      }>
+    }>(`/cases/${id}`),
   create: (data: {
     title: string
     lead_institution: string
@@ -216,18 +235,12 @@ export const warrantsApi = {
 export const correctionsApi = {
   list: (params?: { custody_status?: string; limit?: number }) =>
     api.get<{ records: Record<string, unknown>[]; total: number }>('/corrections', { params }),
-  create: (data: {
-    suspect_id: string
-    facility_name: string
-    cell_block?: string
-    custody_status?: string
-    intake_date?: string
-    sentence_years?: number
-    court_name?: string
-    offense_description?: string
-    next_review?: string
-    threat_level?: number
-  }) => api.post<Record<string, unknown>>('/corrections', data),
+  get: (id: string) =>
+    api.get<Record<string, unknown>>(`/corrections/${id}`),
+  create: (data: Record<string, unknown>) =>
+    api.post<Record<string, unknown>>('/corrections', data),
+  update: (id: string, data: Record<string, unknown>) =>
+    api.patch<Record<string, unknown>>(`/corrections/${id}`, data),
 }
 
 // ─── International partners ───────────────────────────────────────────────────
@@ -249,6 +262,27 @@ export const auditApi = {
   }) =>
     api.get<{ entries: Record<string, unknown>[]; total: number; action_counts: Record<string, number> }>(
       '/audit', { params }
+    ),
+}
+
+// ─── Team roster ──────────────────────────────────────────────────────────────
+
+export interface TeamMember {
+  id: string
+  badge_number: string
+  full_name: string
+  role: string
+  institution: string
+  clearance_level: string
+  active: boolean
+  last_login_at: string | null
+  active_cases: number
+}
+
+export const teamApi = {
+  list: (institution?: string) =>
+    api.get<{ institution: string; members: TeamMember[]; total_open_cases: number }>(
+      '/team', { params: institution ? { institution } : undefined }
     ),
 }
 
@@ -332,6 +366,7 @@ export interface AdminAnalytics {
   top_pages: Array<{ path: string; visits: number }>
   daily_incidents: Array<{ date: string; count: number }>
   sessions_by_institution: Array<{ name: string; value: number }>
+  hourly_heatmap: Array<{ day: string; hour: number; value: number }>
 }
 
 export const adminPortalApi = {
@@ -339,7 +374,12 @@ export const adminPortalApi = {
   listUsers: () =>
     api.get<{ users: AdminUser[] }>('/admin/users'),
   getUser: (id: string) =>
-    api.get<{ user: AdminUser; sessions: AdminSession[]; login_attempts: Record<string, unknown>[] }>(`/admin/users/${id}`),
+    api.get<{
+      user: AdminUser
+      sessions: AdminSession[]
+      login_attempts: Array<{ id: string; success: boolean; ip_address: string | null; device_type: string | null; browser: string | null; os: string | null; country_name: string | null; city: string | null; failure_reason: string | null; attempted_at: string }>
+      page_visits: Array<{ id: string; page_path: string; page_title: string | null; entered_at: string; left_at: string | null; duration_seconds: number | null }>
+    }>(`/admin/users/${id}`),
   updateUser: (id: string, data: { active?: boolean; locked?: boolean }) =>
     api.patch<{ updated: boolean }>(`/admin/users/${id}`, data),
   changeRole: (id: string, role: string) =>
@@ -367,11 +407,36 @@ export const adminPortalApi = {
   getAnalytics: () =>
     api.get<AdminAnalytics>('/admin/analytics'),
 
+  // System health
+  getHealth: () =>
+    api.get<{
+      status: 'OPERATIONAL' | 'DEGRADED' | 'LOCKED' | 'ALERT'
+      db_healthy: boolean
+      db_latency_ms: number
+      system_locked: boolean
+      active_sessions: number
+      total_active_users: number
+      total_locked_users: number
+      logins_24h: number
+      failed_24h: number
+      open_incidents: { CRITICAL: number; HIGH: number; MEDIUM: number; total: number }
+      service_statuses: { key: string; label: string; enabled: boolean }[]
+      locked_institutions: { inst: string; locked_at: string }[]
+      last_login: { attempted_at: string; badge_number: string; full_name: string; institution: string } | null
+      last_audit: { event_timestamp: string; event_type: string; actor_name: string; actor_institution: string } | null
+      checked_at: string
+      response_time_ms: number
+    }>('/admin/health'),
+
   // Page visit tracking
   trackPageEnter: (page_path: string, page_title?: string) =>
     api.post<{ recorded: boolean; visit_id: string | null }>('/admin/page-visits', { event: 'enter', page_path, page_title }),
   trackPageLeave: (page_path: string, visit_id: string) =>
     api.post<{ recorded: boolean }>('/admin/page-visits', { event: 'leave', page_path, visit_id }),
+
+  // Single-session termination (lighter than revoke-access which locks the account)
+  revokeSession: (sessionId: string) =>
+    api.delete<{ revoked: boolean; session_id: string }>(`/admin/sessions/${sessionId}`),
 }
 
 // ─── AI Intelligence ──────────────────────────────────────────────────────────
@@ -408,7 +473,9 @@ export interface AIInsight {
   id: string
   run_id: string
   institution: string | null
-  insight_type: 'TREND_SUMMARY' | 'ANOMALY_ALERT' | 'SEASONAL_PATTERN' | 'PATROL_STRATEGY' | 'RISK_OVERVIEW'
+  insight_type:
+    | 'TREND_SUMMARY' | 'ANOMALY_ALERT' | 'SEASONAL_PATTERN' | 'PATROL_STRATEGY' | 'RISK_OVERVIEW'
+    | 'WHO_ANALYSIS' | 'WHEN_ANALYSIS' | 'WHERE_ANALYSIS' | 'HOW_ANALYSIS' | 'CRIME_PREDICTIONS'
   title: string
   content: string
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
@@ -617,6 +684,7 @@ export interface ActiveAgent {
   last_ping_at?: string | null
   report_title?: string | null
   report_priority?: string | null
+  report_category?: string | null
   // Availability monitoring
   availability_status: 'ONLINE' | 'OFFLINE' | 'GPS_DISABLED'
   offline_reason?: 'PHONE_OFF' | 'NO_NETWORK' | 'GPS_DISABLED' | 'APP_TERMINATED' | 'TIMEOUT' | null
