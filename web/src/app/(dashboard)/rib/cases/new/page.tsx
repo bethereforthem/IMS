@@ -1,0 +1,1449 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import {
+  ChevronDown, ChevronUp, Plus, Trash2, FileText,
+  Save, Send, Printer, ArrowLeft, Loader2,
+  Users, Shield, MapPin, Package, BookOpen,
+  CheckCircle2, Eye, RefreshCw, X, User, Clock, FileUp,
+  AlertCircle, FolderPlus, Download, Activity,
+} from 'lucide-react'
+import clsx from 'clsx'
+import { format } from 'date-fns'
+
+// ─── Unique ID helper ────────────────────────────────────────────────────────
+const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface PersonEntry {
+  id: string
+  full_name: string; party_status: string; father_name: string; mother_name: string
+  date_of_birth: string; sex: string; place_of_birth: string; country: string
+  province: string; district: string; sector: string; cell: string; village: string
+  residential_address: string; domicile_address: string; telephone: string
+  email: string; national_id: string; nationality: string; marital_status: string
+  profession: string; properties: string; health_status: string
+  education_level: string; num_children: string; alt_contact: string
+  photo?: string  // base64 data URL — passport-style photo
+}
+
+interface HistoryEntry {
+  id: string; case_category: string; sub_category: string; case_type: string
+  crime: string; article: string; suspect_name: string; offender_type: string
+}
+
+interface CrimeInfo {
+  date_of_crime: string; time_of_crime: string; province: string; district: string
+  sector: string; cell: string; village: string; exact_scene: string
+  gps_lat: string; gps_lng: string
+}
+
+interface ExhibitEntry {
+  id: string; number: string; name: string; description: string; quantity: string
+  condition: string; storage_location: string; file_name: string
+}
+
+interface InvestigatorEntry {
+  id: string; name: string; rank: string; institution: string
+  role: string; telephone: string; email: string
+}
+
+interface DocEntry { file_name: string; upload_date: string }
+
+interface CaseInfoState {
+  title: string; category: string; status: string
+  clearance_level: string; lead_institution: string
+  incident_date: string; location_name: string; summary: string
+}
+
+interface ReportState {
+  victims: PersonEntry[]; suspects: PersonEntry[]; witnesses: PersonEntry[]
+  criminal_history: HistoryEntry[]; crime_info: CrimeInfo
+  exhibits: ExhibitEntry[]; investigators: InvestigatorEntry[]
+  crime_summary: string; charge_summary: string; investigation_findings: string
+  documents: Record<string, DocEntry>
+}
+
+// ─── Factory helpers ─────────────────────────────────────────────────────────
+
+const mkPerson = (o: Partial<PersonEntry> = {}): PersonEntry => ({
+  id: uid(), full_name: '', party_status: 'VICTIM', father_name: '', mother_name: '',
+  date_of_birth: '', sex: '', place_of_birth: '', country: 'Rwanda',
+  province: '', district: '', sector: '', cell: '', village: '',
+  residential_address: '', domicile_address: '', telephone: '', email: '',
+  national_id: '', nationality: 'RWA', marital_status: '', profession: '',
+  properties: '', health_status: '', education_level: '', num_children: '',
+  alt_contact: '', photo: '', ...o,
+})
+
+const mkHistory = (): HistoryEntry => ({
+  id: uid(), case_category: '', sub_category: '', case_type: '',
+  crime: '', article: '', suspect_name: '', offender_type: '',
+})
+
+const mkExhibit = (n: number): ExhibitEntry => ({
+  id: uid(), number: `EXH-${String(n).padStart(3, '0')}`,
+  name: '', description: '', quantity: '1', condition: '', storage_location: '', file_name: '',
+})
+
+const mkInvestigator = (o: Partial<InvestigatorEntry> = {}): InvestigatorEntry => ({
+  id: uid(), name: '', rank: '', institution: '', role: '', telephone: '', email: '', ...o,
+})
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const PROVINCES = ['Kigali City', 'Northern Province', 'Southern Province', 'Eastern Province', 'Western Province']
+
+const CATEGORIES = [
+  'ARMED_ROBBERY', 'FRAUD', 'DRUG_OFFENSE', 'HOMICIDE', 'CORRUPTION',
+  'TRAFFICKING', 'CYBERCRIME', 'TERRORISM', 'BORDER_VIOLATION',
+  'ORGANIZED_CRIME', 'ROBBERY', 'DRUG_TRAFFICKING', 'OTHER',
+]
+
+const DOC_TYPES = [
+  'Seizure Report', 'Scene Observation Report', 'Expert Report',
+  'Response Statement', 'Supplementary Seizure Report',
+  'Supplementary Scene Observation Report', 'Opening Report',
+  'Initial Opening Report', 'Closing Report',
+  "Complainant's Statement", 'Witness Statement', "Suspect's Statement",
+]
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const INP = 'w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500/20'
+const SEL = INP + ' cursor-pointer'
+const LBL = 'block text-[11px] font-medium text-slate-400 mb-1 uppercase tracking-wide'
+const G2 = 'grid grid-cols-1 sm:grid-cols-2 gap-3'
+const G3 = 'grid grid-cols-1 sm:grid-cols-3 gap-3'
+const G4 = 'grid grid-cols-2 sm:grid-cols-4 gap-3'
+
+// ─── SectionCard ─────────────────────────────────────────────────────────────
+
+function SectionCard({
+  anchor, icon: Icon, color, title, badge, children, defaultOpen = true, subtitle,
+}: {
+  anchor: string; icon: React.ElementType; color: string; title: string
+  badge?: number; children: React.ReactNode; defaultOpen?: boolean; subtitle?: string
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div id={anchor} className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-800/40 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div className={clsx('p-1.5 rounded-lg bg-slate-800', color.replace('text-', 'border-') + '/20')}>
+            <Icon className={clsx('h-4 w-4', color)} />
+          </div>
+          <div>
+            <span className="text-sm font-bold text-white">{title}</span>
+            {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+          </div>
+          {badge !== undefined && (
+            <span className={clsx('text-xs font-bold px-2 py-0.5 rounded-full', color.replace('text-', 'bg-').replace('400', '950'), color)}>
+              {badge}
+            </span>
+          )}
+        </div>
+        {open
+          ? <ChevronUp className="h-4 w-4 text-slate-500 shrink-0" />
+          : <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />}
+      </button>
+      {open && (
+        <div className="border-t border-slate-800 px-5 pb-5 pt-4 space-y-4">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── PersonForm ──────────────────────────────────────────────────────────────
+
+function PersonForm({
+  index, person, label, partyOptions, onUpdate, onRemove, canRemove, accentColor,
+}: {
+  index: number; person: PersonEntry; label: string; partyOptions: string[]
+  onUpdate: (p: PersonEntry) => void; onRemove: () => void; canRemove: boolean
+  accentColor?: string
+}) {
+  const [open, setOpen] = useState(true)
+  const s = (f: keyof PersonEntry, v: string) => onUpdate({ ...person, [f]: v })
+  const accent = accentColor ?? 'teal'
+
+  return (
+    <div className={`border border-slate-700/60 rounded-xl overflow-hidden`}>
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/60">
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-2 flex-1 text-left min-w-0">
+          <div className={`h-6 w-6 rounded-full bg-${accent}-900/50 border border-${accent}-700/40 flex items-center justify-center shrink-0`}>
+            <span className={`text-[10px] font-bold text-${accent}-400`}>{index + 1}</span>
+          </div>
+          <span className="text-xs font-semibold text-slate-200 truncate">
+            {person.full_name.trim() || `${label} ${index + 1}`}
+          </span>
+          {person.party_status && (
+            <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-${accent}-950 text-${accent}-400 shrink-0`}>
+              {person.party_status}
+            </span>
+          )}
+          {open
+            ? <ChevronUp className="h-3.5 w-3.5 text-slate-500 ml-auto shrink-0" />
+            : <ChevronDown className="h-3.5 w-3.5 text-slate-500 ml-auto shrink-0" />}
+        </button>
+        {canRemove && (
+          <button type="button" onClick={onRemove}
+            className="ml-3 p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition shrink-0">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="px-4 pb-4 pt-3 space-y-3 bg-slate-900/20">
+
+          {/* Photo + Full Name + Party Status */}
+          <div className="flex items-start gap-4">
+            {/* Passport-style photo box */}
+            <div className="shrink-0">
+              {person.photo ? (
+                <div className="relative">
+                  <img src={person.photo} alt="Profile photo"
+                    className="h-24 w-[74px] rounded-lg border border-slate-600 object-cover shadow" />
+                  <button type="button" onClick={() => s('photo', '')}
+                    className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-600 flex items-center justify-center shadow">
+                    <X className="h-3 w-3 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center h-24 w-[74px] cursor-pointer rounded-lg border-2 border-dashed border-slate-600 bg-slate-800/60 hover:border-teal-500 hover:bg-teal-950/20 transition gap-1.5 select-none">
+                  <User className="h-7 w-7 text-slate-500" />
+                  <span className="text-[9px] text-slate-500 text-center px-1 leading-tight">Add<br/>Photo</span>
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = ev => s('photo', ev.target?.result as string)
+                      reader.readAsDataURL(file)
+                    }} />
+                </label>
+              )}
+            </div>
+            {/* Full Name + Party Status */}
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={LBL}>Full Name *</label>
+                <input value={person.full_name} onChange={e => s('full_name', e.target.value)}
+                  className={INP} placeholder="Full legal name as per ID" />
+              </div>
+              <div>
+                <label className={LBL}>Party Status</label>
+                <select value={person.party_status} onChange={e => s('party_status', e.target.value)} className={SEL}>
+                  {partyOptions.map(o => <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2: Father + Mother */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Father&apos;s Name</label>
+              <input value={person.father_name} onChange={e => s('father_name', e.target.value)}
+                className={INP} placeholder="Father's full name" />
+            </div>
+            <div>
+              <label className={LBL}>Mother&apos;s Name</label>
+              <input value={person.mother_name} onChange={e => s('mother_name', e.target.value)}
+                className={INP} placeholder="Mother's full name" />
+            </div>
+          </div>
+
+          {/* Row 3: DOB + Sex + Place of Birth */}
+          <div className={G3}>
+            <div>
+              <label className={LBL}>Date of Birth</label>
+              <input type="date" value={person.date_of_birth}
+                onChange={e => s('date_of_birth', e.target.value)} className={INP} />
+            </div>
+            <div>
+              <label className={LBL}>Sex</label>
+              <select value={person.sex} onChange={e => s('sex', e.target.value)} className={SEL}>
+                <option value="">— Select —</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+              </select>
+            </div>
+            <div>
+              <label className={LBL}>Place of Birth</label>
+              <input value={person.place_of_birth} onChange={e => s('place_of_birth', e.target.value)}
+                className={INP} placeholder="City / District" />
+            </div>
+          </div>
+
+          {/* Row 4: Country + Province */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Country</label>
+              <input value={person.country} onChange={e => s('country', e.target.value)}
+                className={INP} placeholder="Rwanda" />
+            </div>
+            <div>
+              <label className={LBL}>Province</label>
+              <select value={person.province} onChange={e => s('province', e.target.value)} className={SEL}>
+                <option value="">— Select Province —</option>
+                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 5: District + Sector + Cell */}
+          <div className={G3}>
+            <div>
+              <label className={LBL}>District</label>
+              <input value={person.district} onChange={e => s('district', e.target.value)}
+                className={INP} placeholder="District" />
+            </div>
+            <div>
+              <label className={LBL}>Sector</label>
+              <input value={person.sector} onChange={e => s('sector', e.target.value)}
+                className={INP} placeholder="Sector" />
+            </div>
+            <div>
+              <label className={LBL}>Cell</label>
+              <input value={person.cell} onChange={e => s('cell', e.target.value)}
+                className={INP} placeholder="Cell" />
+            </div>
+          </div>
+
+          {/* Row 6: Village */}
+          <div>
+            <label className={LBL}>Village</label>
+            <input value={person.village} onChange={e => s('village', e.target.value)}
+              className={INP} placeholder="Village name" />
+          </div>
+
+          {/* Row 7: Residential + Domicile */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Residential Address</label>
+              <input value={person.residential_address} onChange={e => s('residential_address', e.target.value)}
+                className={INP} placeholder="Full residential address" />
+            </div>
+            <div>
+              <label className={LBL}>Domicile Address</label>
+              <input value={person.domicile_address} onChange={e => s('domicile_address', e.target.value)}
+                className={INP} placeholder="If different from residential" />
+            </div>
+          </div>
+
+          {/* Row 8: Phone + Email */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Telephone Number</label>
+              <input type="tel" value={person.telephone} onChange={e => s('telephone', e.target.value)}
+                className={INP} placeholder="+250 7XX XXX XXX" />
+            </div>
+            <div>
+              <label className={LBL}>Email Address</label>
+              <input type="email" value={person.email} onChange={e => s('email', e.target.value)}
+                className={INP} placeholder="email@example.com" />
+            </div>
+          </div>
+
+          {/* Row 9: National ID + Nationality */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>National ID / Passport Number</label>
+              <input value={person.national_id} onChange={e => s('national_id', e.target.value)}
+                className={INP} placeholder="1 XXXX X XXXXXXX X XX" />
+            </div>
+            <div>
+              <label className={LBL}>Nationality (ISO 3-letter)</label>
+              <input value={person.nationality} onChange={e => s('nationality', e.target.value)}
+                maxLength={3} className={INP} placeholder="RWA" />
+            </div>
+          </div>
+
+          {/* Row 10: Marital + Profession + Education */}
+          <div className={G3}>
+            <div>
+              <label className={LBL}>Marital Status</label>
+              <select value={person.marital_status} onChange={e => s('marital_status', e.target.value)} className={SEL}>
+                <option value="">— Select —</option>
+                {['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', 'SEPARATED'].map(v => (
+                  <option key={v} value={v}>{v.charAt(0) + v.slice(1).toLowerCase()}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={LBL}>Profession</label>
+              <input value={person.profession} onChange={e => s('profession', e.target.value)}
+                className={INP} placeholder="Occupation / Job title" />
+            </div>
+            <div>
+              <label className={LBL}>Education Level</label>
+              <select value={person.education_level} onChange={e => s('education_level', e.target.value)} className={SEL}>
+                <option value="">— Select —</option>
+                {['NONE', 'PRIMARY', 'SECONDARY', 'TVET', 'UNDERGRADUATE', 'POSTGRADUATE', 'PHD'].map(v => (
+                  <option key={v} value={v}>{v.charAt(0) + v.slice(1).toLowerCase().replace('_', ' ')}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 11: Health + Properties */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Health Status</label>
+              <input value={person.health_status} onChange={e => s('health_status', e.target.value)}
+                className={INP} placeholder="Known conditions / disabilities" />
+            </div>
+            <div>
+              <label className={LBL}>Properties Owned</label>
+              <input value={person.properties} onChange={e => s('properties', e.target.value)}
+                className={INP} placeholder="Vehicles, land, buildings, assets" />
+            </div>
+          </div>
+
+          {/* Row 12: Num Children + Alt Contact */}
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Number of Children</label>
+              <input type="number" min="0" value={person.num_children}
+                onChange={e => s('num_children', e.target.value)} className={INP} placeholder="0" />
+            </div>
+            <div>
+              <label className={LBL}>Alternative Contact Information</label>
+              <input value={person.alt_contact} onChange={e => s('alt_contact', e.target.value)}
+                className={INP} placeholder="Next of kin / emergency contact name & phone" />
+            </div>
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ExhibitCard ─────────────────────────────────────────────────────────────
+
+function ExhibitCard({
+  exhibit, index, onUpdate, onRemove, canRemove,
+}: {
+  exhibit: ExhibitEntry; index: number
+  onUpdate: (e: ExhibitEntry) => void; onRemove: () => void; canRemove: boolean
+}) {
+  const s = (f: keyof ExhibitEntry, v: string) => onUpdate({ ...exhibit, [f]: v })
+
+  return (
+    <div className="border border-slate-700/60 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/60">
+        <span className="text-xs font-semibold text-orange-300">
+          Exhibit {index + 1} {exhibit.number && `— ${exhibit.number}`}
+        </span>
+        {canRemove && (
+          <button type="button" onClick={onRemove}
+            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="px-4 pb-4 pt-3 space-y-3 bg-slate-900/20">
+        <div className={G3}>
+          <div>
+            <label className={LBL}>Exhibit Number</label>
+            <input value={exhibit.number} onChange={e => s('number', e.target.value)} className={INP} />
+          </div>
+          <div>
+            <label className={LBL}>Exhibit Name *</label>
+            <input value={exhibit.name} onChange={e => s('name', e.target.value)}
+              className={INP} placeholder="Name / title of exhibit" />
+          </div>
+          <div>
+            <label className={LBL}>Quantity</label>
+            <input type="number" min="1" value={exhibit.quantity}
+              onChange={e => s('quantity', e.target.value)} className={INP} />
+          </div>
+        </div>
+        <div>
+          <label className={LBL}>Description</label>
+          <textarea value={exhibit.description} onChange={e => s('description', e.target.value)}
+            rows={2} className={INP + ' resize-none'}
+            placeholder="Detailed description of the exhibit, its condition when found, relevance to the case…" />
+        </div>
+        <div className={G2}>
+          <div>
+            <label className={LBL}>Condition</label>
+            <select value={exhibit.condition} onChange={e => s('condition', e.target.value)} className={SEL}>
+              <option value="">— Select —</option>
+              {['GOOD', 'DAMAGED', 'DETERIORATED', 'DESTROYED', 'UNKNOWN'].map(v => (
+                <option key={v} value={v}>{v.charAt(0) + v.slice(1).toLowerCase()}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={LBL}>Storage Location</label>
+            <input value={exhibit.storage_location} onChange={e => s('storage_location', e.target.value)}
+              className={INP} placeholder="Evidence room / safe location" />
+          </div>
+        </div>
+        <div>
+          <label className={LBL}>Attached Photograph / File</label>
+          {exhibit.file_name ? (
+            <div className="flex items-center gap-2 rounded-lg border border-teal-700/40 bg-teal-950/20 px-3 py-2">
+              <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />
+              <span className="text-xs text-teal-300 truncate flex-1">{exhibit.file_name}</span>
+              <button type="button" onClick={() => s('file_name', '')}
+                className="text-slate-500 hover:text-red-400 transition shrink-0">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-dashed border-slate-600 px-3 py-2.5 text-xs text-slate-400 hover:border-teal-600 hover:text-teal-400 transition">
+              <FileUp className="h-4 w-4" /> Click to attach photograph or file
+              <input type="file" className="hidden"
+                onChange={e => { if (e.target.files?.[0]) s('file_name', e.target.files[0].name) }} />
+            </label>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── InvestigatorCard ────────────────────────────────────────────────────────
+
+function InvestigatorCard({
+  inv, index, onUpdate, onRemove, canRemove,
+}: {
+  inv: InvestigatorEntry; index: number
+  onUpdate: (i: InvestigatorEntry) => void; onRemove: () => void; canRemove: boolean
+}) {
+  const s = (f: keyof InvestigatorEntry, v: string) => onUpdate({ ...inv, [f]: v })
+
+  return (
+    <div className="border border-slate-700/60 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-800/60">
+        <span className="text-xs font-semibold text-slate-300">
+          Investigator / Expert {index + 1} {inv.name && `— ${inv.name}`}
+        </span>
+        {canRemove && (
+          <button type="button" onClick={onRemove}
+            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <div className="px-4 pb-4 pt-3 bg-slate-900/20">
+        <div className={G3}>
+          <div>
+            <label className={LBL}>Full Name *</label>
+            <input value={inv.name} onChange={e => s('name', e.target.value)}
+              className={INP} placeholder="Investigator full name" />
+          </div>
+          <div>
+            <label className={LBL}>Rank / Title</label>
+            <input value={inv.rank} onChange={e => s('rank', e.target.value)}
+              className={INP} placeholder="Inspector / Sergeant / Dr." />
+          </div>
+          <div>
+            <label className={LBL}>Institution</label>
+            <input value={inv.institution} onChange={e => s('institution', e.target.value)}
+              className={INP} placeholder="RIB / RNP / Forensics Lab" />
+          </div>
+        </div>
+        <div className={G3 + ' mt-3'}>
+          <div>
+            <label className={LBL}>Role in Investigation</label>
+            <input value={inv.role} onChange={e => s('role', e.target.value)}
+              className={INP} placeholder="Lead Investigator / Expert / etc." />
+          </div>
+          <div>
+            <label className={LBL}>Telephone Number</label>
+            <input type="tel" value={inv.telephone} onChange={e => s('telephone', e.target.value)}
+              className={INP} placeholder="+250 7XX XXX XXX" />
+          </div>
+          <div>
+            <label className={LBL}>Email Address</label>
+            <input type="email" value={inv.email} onChange={e => s('email', e.target.value)}
+              className={INP} placeholder="email@rib.gov.rw" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── AddBtn ──────────────────────────────────────────────────────────────────
+
+function AddBtn({ onClick, label, color }: { onClick: () => void; label: string; color: string }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={clsx(
+        'flex items-center gap-1.5 text-sm font-semibold rounded-lg px-4 py-2 border transition mt-3',
+        color,
+      )}>
+      <Plus className="h-4 w-4" /> {label}
+    </button>
+  )
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
+export default function NewCasePage() {
+  const router = useRouter()
+  const { user } = useAuth()
+
+  // Case basic info
+  const [caseInfo, setCaseInfo] = useState<CaseInfoState>({
+    title: '',
+    category: 'OTHER',
+    status: 'OPEN',
+    clearance_level: 'CONFIDENTIAL',
+    lead_institution: '',
+    incident_date: '',
+    location_name: '',
+    summary: '',
+  })
+
+  // Set default institution from user
+  useEffect(() => {
+    if (user?.institution) {
+      setCaseInfo(prev => ({ ...prev, lead_institution: user.institution }))
+      setReport(prev => ({
+        ...prev,
+        investigators: [mkInvestigator({
+          name: user.full_name ?? '',
+          institution: user.institution ?? '',
+          role: 'Lead Investigator',
+        })],
+      }))
+    }
+  }, [user])
+
+  // Report data
+  const [report, setReport] = useState<ReportState>({
+    victims: [mkPerson({ party_status: 'VICTIM' })],
+    suspects: [mkPerson({ party_status: 'SUSPECT' })],
+    witnesses: [],
+    criminal_history: [],
+    crime_info: {
+      date_of_crime: '', time_of_crime: '', province: '', district: '',
+      sector: '', cell: '', village: '', exact_scene: '', gps_lat: '', gps_lng: '',
+    },
+    exhibits: [mkExhibit(1)],
+    investigators: [mkInvestigator()],
+    crime_summary: '', charge_summary: '', investigation_findings: '',
+    documents: {},
+  })
+
+  const [saving, setSaving] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [titleError, setTitleError] = useState(false)
+  const [signatureName, setSignatureName] = useState<string | null>(null)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+
+  function handleSignatureUpload(file: File) {
+    setSignatureName(file.name)
+    const reader = new FileReader()
+    reader.onload = e => setSignatureDataUrl(e.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  // Auto-save to localStorage
+  useEffect(() => {
+    const t = setTimeout(() => {
+      localStorage.setItem('ims_new_case_draft', JSON.stringify({ caseInfo, report }))
+    }, 800)
+    return () => clearTimeout(t)
+  }, [caseInfo, report])
+
+  // Restore draft on mount
+  useEffect(() => {
+    const raw = localStorage.getItem('ims_new_case_draft')
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed.caseInfo?.title) setCaseInfo(parsed.caseInfo)
+        if (parsed.report?.victims) setReport(parsed.report)
+      } catch { /* noop */ }
+    }
+  }, [])
+
+  // Sync crime date from case incident date
+  useEffect(() => {
+    if (caseInfo.incident_date) {
+      setReport(prev => ({
+        ...prev,
+        crime_info: { ...prev.crime_info, date_of_crime: caseInfo.incident_date },
+      }))
+    }
+  }, [caseInfo.incident_date])
+
+  const upd = useCallback(<K extends keyof ReportState>(key: K, val: ReportState[K]) => {
+    setReport(prev => ({ ...prev, [key]: val }))
+  }, [])
+
+  function setPerson(key: 'victims' | 'suspects' | 'witnesses', p: PersonEntry) {
+    upd(key, report[key].map(x => x.id === p.id ? p : x))
+  }
+  function delPerson(key: 'victims' | 'suspects' | 'witnesses', id: string) {
+    upd(key, report[key].filter(x => x.id !== id))
+  }
+  function addPerson(key: 'victims' | 'suspects' | 'witnesses', status: string) {
+    upd(key, [...report[key], mkPerson({ party_status: status })])
+  }
+
+  // ── Progress ──────────────────────────────────────────────────────────────
+
+  const completion = (() => {
+    const checks = [
+      !!caseInfo.title.trim(),
+      report.victims.some(v => v.full_name.trim()),
+      report.suspects.some(s => s.full_name.trim()),
+      !!report.crime_info.date_of_crime,
+      !!report.crime_info.exact_scene,
+      !!report.crime_summary.trim(),
+      !!report.charge_summary.trim(),
+      !!report.investigation_findings.trim(),
+      report.investigators.some(i => i.name.trim()),
+    ]
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+  })()
+
+  // ── PDF Export ────────────────────────────────────────────────────────────
+
+  async function handlePrint() {
+    const { generateInvestigationPdf } = await import('@/lib/report-pdf')
+    await generateInvestigationPdf({
+      caseInfo: {
+        title: caseInfo.title,
+        caseRef: '(draft — not yet submitted)',
+        clearance: (caseInfo.clearance_level ?? 'CONFIDENTIAL').replace(/_/g, ' '),
+        category: caseInfo.category ?? '',
+        status: caseInfo.status ?? '',
+        lead_institution: caseInfo.lead_institution ?? '',
+        incident_date: caseInfo.incident_date ?? '',
+        location_name: caseInfo.location_name ?? '',
+        summary: caseInfo.summary ?? '',
+      },
+      report,
+      investigator: {
+        full_name: user?.full_name ?? '',
+        role: user?.role ?? '',
+        badge_number: user?.badge_number ?? '',
+        institution: user?.institution ?? '',
+      },
+      signatureDataUrl,
+    })
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+
+  async function handleSubmit(submitStatus: 'DRAFT' | 'SUBMITTED' = 'SUBMITTED') {
+    if (!caseInfo.title.trim()) {
+      setTitleError(true)
+      document.getElementById('sec-case-info')?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+    setTitleError(false)
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      // Step 1: Create the case
+      const token = document.cookie.split('; ').find(r => r.startsWith('ims_access_token='))?.split('=')[1] ?? ''
+      const authHeader = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+
+      const caseRes = await fetch('/api/v1/cases', {
+        method: 'POST',
+        credentials: 'include',
+        headers: authHeader,
+        body: JSON.stringify({
+          title: caseInfo.title.trim(),
+          category: caseInfo.category,
+          status: caseInfo.status,
+          clearance_level: caseInfo.clearance_level,
+          lead_institution: caseInfo.lead_institution,
+          summary: caseInfo.summary.trim() || undefined,
+          incident_date: caseInfo.incident_date || undefined,
+          location_name: caseInfo.location_name.trim() || undefined,
+        }),
+      })
+
+      if (!caseRes.ok) {
+        const errData = await caseRes.json().catch(() => ({}))
+        throw new Error(errData.error ?? errData.message ?? `Case creation failed (${caseRes.status})`)
+      }
+
+      const newCase = await caseRes.json()
+      const caseId = newCase.id
+
+      // Step 2: Save the investigation report
+      await fetch(`/api/v1/cases/${caseId}/report`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: authHeader,
+        body: JSON.stringify({ report_data: report, status: submitStatus }),
+      })
+
+      // Step 3: Clear draft
+      localStorage.removeItem('ims_new_case_draft')
+
+      // Step 4: Navigate to the case report view
+      router.push(`/rib/cases/${caseId}/report`)
+
+    } catch (err: unknown) {
+      const e = err as Error
+      setError(e.message ?? 'Failed to create case. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const NAV = [
+    { id: 'sec-case-info', label: '0. Case Info' },
+    { id: 'sec-victims',   label: 'I. Victims' },
+    { id: 'sec-suspects',  label: 'II. Suspects' },
+    { id: 'sec-witnesses', label: 'III. Witnesses' },
+    { id: 'sec-history',   label: 'IV. Crim. History' },
+    { id: 'sec-crime',     label: 'V. Crime Info' },
+    { id: 'sec-exhibits',  label: 'VI. Exhibits' },
+    { id: 'sec-invests',   label: 'VII. Investigators' },
+    { id: 'sec-summaries', label: 'VIII-X. Summaries' },
+    { id: 'sec-docs',      label: 'XI. Documents' },
+  ]
+
+  return (
+    <div className="space-y-5 pb-24">
+
+      {/* ── Print header ── */}
+      <div className="print-header">
+        <div className="text-center border-b-2 border-black pb-4 mb-6">
+          <p className="text-xs font-bold uppercase tracking-widest">Republic of Rwanda</p>
+          <p className="text-xs uppercase tracking-wider">Rwanda Investigation Bureau</p>
+          <h1 className="text-2xl font-bold mt-2 uppercase">Criminal Investigation Report</h1>
+          <p className="text-sm font-semibold mt-0.5">{caseInfo.title}</p>
+          <p className="text-xs text-gray-600 mt-1">Classification: {caseInfo.clearance_level}</p>
+        </div>
+      </div>
+
+      {/* ── Top bar ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 no-print">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()}
+            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+          <div className="h-4 w-px bg-slate-700" />
+          <div className="flex items-center gap-2">
+            <FolderPlus className="h-4 w-4 text-teal-400" />
+            <h1 className="text-sm font-bold text-white">New Investigation Case</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-slate-500 hidden sm:block">
+            Auto-saved · {completion}% complete
+          </span>
+          <button onClick={handlePrint}
+            className="flex items-center gap-1.5 rounded-lg border border-teal-700/50 bg-teal-900/20 px-3 py-1.5 text-xs font-semibold text-teal-300 hover:bg-teal-900/40 transition">
+            <Printer className="h-3.5 w-3.5" /> PDF
+          </button>
+          <button
+            onClick={() => handleSubmit('DRAFT')}
+            disabled={submitting}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 transition">
+            {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Save Draft
+          </button>
+          <button
+            onClick={() => handleSubmit('SUBMITTED')}
+            disabled={submitting}
+            className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-50 transition">
+            {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            Create &amp; Submit
+          </button>
+        </div>
+      </div>
+
+      {/* ── Progress ── */}
+      <div className="no-print">
+        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
+          <span className="font-medium">Report Completion</span>
+          <span className={clsx('font-bold', completion >= 80 ? 'text-teal-400' : completion >= 50 ? 'text-amber-400' : 'text-slate-400')}>
+            {completion}%
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-slate-800">
+          <div className={clsx('h-2 rounded-full transition-all duration-500',
+            completion >= 80 ? 'bg-teal-500' : completion >= 50 ? 'bg-amber-500' : 'bg-slate-600')}
+            style={{ width: `${completion}%` }} />
+        </div>
+      </div>
+
+      {/* ── Error banner ── */}
+      {error && (
+        <div className="no-print flex items-start gap-3 rounded-xl border border-red-800 bg-red-950/30 px-4 py-3 text-sm text-red-400">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-300 shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* ── Section navigation ── */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1 no-print">
+        {NAV.map(n => (
+          <a key={n.id} href={`#${n.id}`}
+            className="shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition whitespace-nowrap">
+            {n.label}
+          </a>
+        ))}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          0. CASE INFORMATION
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-case-info" icon={FolderPlus} color="text-teal-400"
+        title="0. Case Information" subtitle="Basic case details — required to register the case">
+        <div className="space-y-4">
+
+          <div>
+            <label className={LBL}>Case Title *</label>
+            <input
+              value={caseInfo.title}
+              onChange={e => { setCaseInfo(prev => ({ ...prev, title: e.target.value })); setTitleError(false) }}
+              className={clsx(INP, titleError && 'border-red-500 ring-1 ring-red-500/30')}
+              placeholder="e.g. Armed Robbery Series — Kigali CBD" />
+            {titleError && <p className="text-xs text-red-400 mt-1">Case title is required.</p>}
+          </div>
+
+          <div className={G3}>
+            <div>
+              <label className={LBL}>Category</label>
+              <select value={caseInfo.category} onChange={e => setCaseInfo(p => ({ ...p, category: e.target.value }))} className={SEL}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={LBL}>Status</label>
+              <select value={caseInfo.status} onChange={e => setCaseInfo(p => ({ ...p, status: e.target.value }))} className={SEL}>
+                <option value="OPEN">OPEN</option>
+                <option value="UNDER_INVESTIGATION">UNDER INVESTIGATION</option>
+                <option value="PROSECUTION">PROSECUTION</option>
+                <option value="CLOSED">CLOSED</option>
+              </select>
+            </div>
+            <div>
+              <label className={LBL}>Clearance Level</label>
+              <select value={caseInfo.clearance_level} onChange={e => setCaseInfo(p => ({ ...p, clearance_level: e.target.value }))} className={SEL}>
+                <option value="UNCLASSIFIED">UNCLASSIFIED</option>
+                <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+                <option value="SECRET">SECRET</option>
+                <option value="TOP_SECRET">TOP SECRET</option>
+              </select>
+            </div>
+          </div>
+
+          <div className={G3}>
+            <div>
+              <label className={LBL}>Lead Institution</label>
+              <select value={caseInfo.lead_institution} onChange={e => setCaseInfo(p => ({ ...p, lead_institution: e.target.value }))} className={SEL}>
+                <option value="">— Select —</option>
+                {['RIB', 'RNP', 'NISS', 'RDF', 'RCS'].map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={LBL}>Incident Date</label>
+              <input type="date" value={caseInfo.incident_date}
+                onChange={e => setCaseInfo(p => ({ ...p, incident_date: e.target.value }))} className={INP} />
+            </div>
+            <div>
+              <label className={LBL}>Location</label>
+              <input value={caseInfo.location_name}
+                onChange={e => setCaseInfo(p => ({ ...p, location_name: e.target.value }))}
+                className={INP} placeholder="e.g. Nyabugogo, Kigali" />
+            </div>
+          </div>
+
+          <div>
+            <label className={LBL}>Case Summary</label>
+            <textarea value={caseInfo.summary}
+              onChange={e => setCaseInfo(p => ({ ...p, summary: e.target.value }))}
+              rows={3} className={INP + ' resize-none'}
+              placeholder="Brief summary of the case and initial intelligence gathered…" />
+          </div>
+
+        </div>
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          I. VICTIMS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-victims" icon={Users} color="text-teal-400"
+        title="I. Victim(s)" badge={report.victims.length}
+        subtitle="Personal details of all victims in this case">
+        <div className="space-y-3">
+          {report.victims.map((v, i) => (
+            <PersonForm key={v.id} index={i} person={v} label="Victim"
+              partyOptions={['VICTIM', 'COMPLAINANT', 'INJURED PARTY']}
+              accentColor="teal"
+              onUpdate={p => setPerson('victims', p)}
+              onRemove={() => delPerson('victims', v.id)}
+              canRemove={report.victims.length > 1} />
+          ))}
+        </div>
+        <AddBtn onClick={() => addPerson('victims', 'VICTIM')} label="Add Another Victim"
+          color="text-teal-400 border-teal-700/50 hover:bg-teal-900/20" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          II. SUSPECTS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-suspects" icon={Shield} color="text-violet-400"
+        title="II. Suspect(s)" badge={report.suspects.length}
+        subtitle="Personal details of all suspects in this case">
+        <div className="space-y-3">
+          {report.suspects.map((s, i) => (
+            <PersonForm key={s.id} index={i} person={s} label="Suspect"
+              partyOptions={['SUSPECT', 'ACCUSED', 'DEFENDANT', 'PERSON OF INTEREST', 'CONVICT']}
+              accentColor="violet"
+              onUpdate={p => setPerson('suspects', p)}
+              onRemove={() => delPerson('suspects', s.id)}
+              canRemove={true} />
+          ))}
+        </div>
+        <AddBtn onClick={() => addPerson('suspects', 'SUSPECT')} label="Add Another Suspect"
+          color="text-violet-400 border-violet-700/50 hover:bg-violet-900/20" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          III. WITNESSES
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-witnesses" icon={User} color="text-blue-400"
+        title="III. Witness(es)" badge={report.witnesses.length}
+        subtitle="Personal details of all witnesses" defaultOpen={false}>
+        {report.witnesses.length === 0 && (
+          <p className="text-sm text-slate-500 text-center py-2">No witnesses recorded yet. Click below to add.</p>
+        )}
+        <div className="space-y-3">
+          {report.witnesses.map((w, i) => (
+            <PersonForm key={w.id} index={i} person={w} label="Witness"
+              partyOptions={['WITNESS', 'EYE WITNESS', 'EXPERT WITNESS', 'CHARACTER WITNESS']}
+              accentColor="blue"
+              onUpdate={p => setPerson('witnesses', p)}
+              onRemove={() => delPerson('witnesses', w.id)}
+              canRemove={true} />
+          ))}
+        </div>
+        <AddBtn onClick={() => addPerson('witnesses', 'WITNESS')} label="Add Another Witness"
+          color="text-blue-400 border-blue-700/50 hover:bg-blue-900/20" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          IV. SUSPECT CRIMINAL HISTORY
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-history" icon={Clock} color="text-amber-400"
+        title="IV. Suspect Criminal History" badge={report.criminal_history.length}
+        subtitle="Previous criminal records of suspects" defaultOpen={false}>
+        {report.criminal_history.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-2">No criminal history records added.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-700">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-700 bg-slate-800/60">
+                  {['Case Category', 'Sub Category', 'Case Type', 'Crime', 'Article', 'Suspect Name', 'Offender Type', ''].map(h => (
+                    <th key={h} className="py-2.5 px-2 text-left font-semibold text-slate-400 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {report.criminal_history.map(h => (
+                  <tr key={h.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                    {(['case_category', 'sub_category', 'case_type', 'crime', 'article', 'suspect_name', 'offender_type'] as (keyof HistoryEntry)[]).map(f => (
+                      <td key={f} className="py-1 px-1">
+                        <input
+                          value={h[f] as string}
+                          onChange={e => upd('criminal_history', report.criminal_history.map(x => x.id === h.id ? { ...x, [f]: e.target.value } : x))}
+                          className="w-full min-w-[90px] rounded border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-white placeholder-slate-600 focus:border-teal-500 focus:outline-none"
+                          placeholder={String(f).replace(/_/g, ' ')} />
+                      </td>
+                    ))}
+                    <td className="py-1 px-2">
+                      <button type="button"
+                        onClick={() => upd('criminal_history', report.criminal_history.filter(x => x.id !== h.id))}
+                        className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <AddBtn
+          onClick={() => upd('criminal_history', [...report.criminal_history, mkHistory()])}
+          label="Add Criminal History Record"
+          color="text-amber-400 border-amber-700/50 hover:bg-amber-900/20" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          V. CRIME INFORMATION
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-crime" icon={MapPin} color="text-red-400"
+        title="V. Crime Information" subtitle="Date, time and location details of the crime">
+        <div className="space-y-3">
+          <div className={G3}>
+            <div>
+              <label className={LBL}>Date of Crime *</label>
+              <input type="date" value={report.crime_info.date_of_crime}
+                onChange={e => upd('crime_info', { ...report.crime_info, date_of_crime: e.target.value })} className={INP} />
+            </div>
+            <div>
+              <label className={LBL}>Time of Crime</label>
+              <input type="time" value={report.crime_info.time_of_crime}
+                onChange={e => upd('crime_info', { ...report.crime_info, time_of_crime: e.target.value })} className={INP} />
+            </div>
+            <div>
+              <label className={LBL}>Province</label>
+              <select value={report.crime_info.province}
+                onChange={e => upd('crime_info', { ...report.crime_info, province: e.target.value })} className={SEL}>
+                <option value="">— Select —</option>
+                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className={G3}>
+            <div>
+              <label className={LBL}>District</label>
+              <input value={report.crime_info.district}
+                onChange={e => upd('crime_info', { ...report.crime_info, district: e.target.value })}
+                className={INP} placeholder="District" />
+            </div>
+            <div>
+              <label className={LBL}>Sector</label>
+              <input value={report.crime_info.sector}
+                onChange={e => upd('crime_info', { ...report.crime_info, sector: e.target.value })}
+                className={INP} placeholder="Sector" />
+            </div>
+            <div>
+              <label className={LBL}>Cell</label>
+              <input value={report.crime_info.cell}
+                onChange={e => upd('crime_info', { ...report.crime_info, cell: e.target.value })}
+                className={INP} placeholder="Cell" />
+            </div>
+          </div>
+
+          <div className={G2}>
+            <div>
+              <label className={LBL}>Village</label>
+              <input value={report.crime_info.village}
+                onChange={e => upd('crime_info', { ...report.crime_info, village: e.target.value })}
+                className={INP} placeholder="Village" />
+            </div>
+            <div>
+              <label className={LBL}>GPS Coordinates (optional)</label>
+              <div className="flex gap-2">
+                <input value={report.crime_info.gps_lat}
+                  onChange={e => upd('crime_info', { ...report.crime_info, gps_lat: e.target.value })}
+                  className={INP} placeholder="Latitude" />
+                <input value={report.crime_info.gps_lng}
+                  onChange={e => upd('crime_info', { ...report.crime_info, gps_lng: e.target.value })}
+                  className={INP} placeholder="Longitude" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className={LBL}>Exact Crime Scene *</label>
+            <textarea value={report.crime_info.exact_scene}
+              onChange={e => upd('crime_info', { ...report.crime_info, exact_scene: e.target.value })}
+              rows={3} className={INP + ' resize-none'}
+              placeholder="Precise description of the crime scene — landmarks, building details, surroundings, approach routes…" />
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          VI. EXHIBITS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-exhibits" icon={Package} color="text-orange-400"
+        title="VI. Exhibits" badge={report.exhibits.length}
+        subtitle="Physical evidence collected from the crime scene" defaultOpen={false}>
+        <div className="space-y-3">
+          {report.exhibits.map((ex, i) => (
+            <ExhibitCard key={ex.id} exhibit={ex} index={i}
+              onUpdate={u => upd('exhibits', report.exhibits.map(x => x.id === ex.id ? u : x))}
+              onRemove={() => upd('exhibits', report.exhibits.filter(x => x.id !== ex.id))}
+              canRemove={report.exhibits.length > 1} />
+          ))}
+        </div>
+        <AddBtn
+          onClick={() => upd('exhibits', [...report.exhibits, mkExhibit(report.exhibits.length + 1)])}
+          label="Add Exhibit"
+          color="text-orange-400 border-orange-700/50 hover:bg-orange-900/20" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          VII. INVESTIGATORS / EXPERTS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-invests" icon={Activity} color="text-slate-300"
+        title="VII. Investigators / Experts" badge={report.investigators.length}
+        subtitle="All investigators and expert witnesses involved in this case">
+        <div className="space-y-3">
+          {report.investigators.map((inv, i) => (
+            <InvestigatorCard key={inv.id} inv={inv} index={i}
+              onUpdate={u => upd('investigators', report.investigators.map(x => x.id === inv.id ? u : x))}
+              onRemove={() => upd('investigators', report.investigators.filter(x => x.id !== inv.id))}
+              canRemove={report.investigators.length > 1} />
+          ))}
+        </div>
+        <AddBtn
+          onClick={() => upd('investigators', [...report.investigators, mkInvestigator()])}
+          label="Add Investigator / Expert"
+          color="text-slate-300 border-slate-600 hover:bg-slate-800" />
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          VIII – X. SUMMARIES & FINDINGS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-summaries" icon={BookOpen} color="text-teal-300"
+        title="VIII – X. Summaries & Investigation Findings"
+        subtitle="Narrative sections for crime summary, charges and investigation conclusions">
+        <div className="space-y-6">
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-bold text-white">VIII. Crime Summary *</label>
+              <span className="text-[11px] text-slate-500">{report.crime_summary.length} chars</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">Describe in detail how the crime was committed.</p>
+            <textarea value={report.crime_summary}
+              onChange={e => upd('crime_summary', e.target.value)}
+              rows={8} className={INP + ' resize-y min-h-[160px]'}
+              placeholder="Provide a comprehensive narrative of how the crime was committed. Include the sequence of events, methods used, weapons or tools involved, time, and any other relevant circumstances that led to or surrounded the criminal act…" />
+          </div>
+
+          <div className="border-t border-slate-800 pt-5">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-bold text-white">IX. Charge Summary *</label>
+              <span className="text-[11px] text-slate-500">{report.charge_summary.length} chars</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">Summarize all charges against the suspect(s).</p>
+            <textarea value={report.charge_summary}
+              onChange={e => upd('charge_summary', e.target.value)}
+              rows={6} className={INP + ' resize-y min-h-[120px]'}
+              placeholder="List and describe all charges brought against each suspect. Reference applicable articles of law, penal code provisions, and legal basis for prosecution…" />
+          </div>
+
+          <div className="border-t border-slate-800 pt-5">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-bold text-white">X. Investigation Findings *</label>
+              <span className="text-[11px] text-slate-500">{report.investigation_findings.length} chars</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">Conclusions reached by investigators and intelligence analysis.</p>
+            <textarea value={report.investigation_findings}
+              onChange={e => upd('investigation_findings', e.target.value)}
+              rows={8} className={INP + ' resize-y min-h-[160px]'}
+              placeholder="Summarize the key findings from the investigation. Include evidence gathered, forensic analysis, intelligence assessments, witness corroborations, and final investigative conclusions with recommended next steps…" />
+          </div>
+
+        </div>
+      </SectionCard>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          XI. INVESTIGATION DOCUMENTS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionCard anchor="sec-docs" icon={FileText} color="text-slate-400"
+        title="XI. Investigation Documents"
+        subtitle="Upload all official documents attached to this investigation" defaultOpen={false}>
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-700 bg-slate-800/50">
+                <th className="py-2.5 px-3 text-left text-xs font-semibold text-slate-400 w-8">#</th>
+                <th className="py-2.5 px-3 text-left text-xs font-semibold text-slate-400">Document Type</th>
+                <th className="py-2.5 px-3 text-left text-xs font-semibold text-slate-400">Upload File</th>
+                <th className="py-2.5 px-3 text-left text-xs font-semibold text-slate-400">Date Uploaded</th>
+                <th className="py-2.5 px-3 text-left text-xs font-semibold text-slate-400">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DOC_TYPES.map((name, idx) => {
+                const entry = report.documents[name]
+                const hasFile = !!entry?.file_name
+                return (
+                  <tr key={name} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
+                    <td className="py-2.5 px-3 text-xs text-slate-500 font-mono">{idx + 1}</td>
+                    <td className="py-2.5 px-3 text-xs text-slate-200 font-medium">{name}</td>
+                    <td className="py-2.5 px-3">
+                      {!hasFile ? (
+                        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer hover:text-teal-400 transition">
+                          <FileUp className="h-3.5 w-3.5" /> Upload
+                          <input type="file" className="hidden"
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (f) upd('documents', { ...report.documents, [name]: { file_name: f.name, upload_date: new Date().toISOString().slice(0, 10) } })
+                            }} />
+                        </label>
+                      ) : (
+                        <span className="text-xs text-teal-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span className="truncate max-w-[160px]">{entry.file_name}</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-xs text-slate-400">{entry?.upload_date || '—'}</td>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-2">
+                        {hasFile && (
+                          <>
+                            <button type="button" title="View" className="p-1 rounded text-slate-500 hover:text-teal-400 hover:bg-teal-950/30 transition">
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" title="Download" className="p-1 rounded text-slate-500 hover:text-blue-400 hover:bg-blue-950/30 transition">
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                            <label title="Replace" className="p-1 rounded text-slate-500 hover:text-amber-400 hover:bg-amber-950/30 transition cursor-pointer">
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              <input type="file" className="hidden"
+                                onChange={e => {
+                                  const f = e.target.files?.[0]
+                                  if (f) upd('documents', { ...report.documents, [name]: { file_name: f.name, upload_date: new Date().toISOString().slice(0, 10) } })
+                                }} />
+                            </label>
+                            <button type="button" title="Delete"
+                              onClick={() => { const d = { ...report.documents }; delete d[name]; upd('documents', d) }}
+                              className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      {/* ── Investigator Profile Footer ── */}
+      <div className="rounded-xl border border-teal-900/40 bg-teal-950/10 p-5">
+        <h3 className="text-sm font-bold text-white mb-1">Investigator Profile — Report Footer</h3>
+        <p className="text-xs text-slate-500 mb-4">Auto-populated from your account. Will appear in the report footer when submitted.</p>
+        <div className="flex flex-col sm:flex-row items-start gap-6">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2.5 text-xs flex-1">
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Investigator Name</span>
+              <p className="text-slate-200 font-semibold mt-0.5">{user?.full_name ?? '—'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Rank / Role</span>
+              <p className="text-slate-200 font-semibold mt-0.5">{user?.role?.replace(/_/g, ' ') ?? '—'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Badge Number</span>
+              <p className="text-slate-200 font-mono mt-0.5">{user?.badge_number ?? '—'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Institution</span>
+              <p className="text-slate-200 font-semibold mt-0.5">{user?.institution ?? '—'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Report Date</span>
+              <p className="text-slate-200 mt-0.5">{format(new Date(), 'dd MMM yyyy')}</p>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase tracking-wide text-[10px]">Time</span>
+              <p className="text-slate-200 mt-0.5">{format(new Date(), 'HH:mm')}</p>
+            </div>
+          </div>
+
+          <div className="text-center shrink-0">
+            <p className="text-[11px] text-slate-500 mb-2 uppercase tracking-wide">Digital Signature</p>
+            {signatureName ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-1.5 rounded-lg border border-teal-700/40 bg-teal-950/20 px-3 py-2">
+                  <CheckCircle2 className="h-4 w-4 text-teal-400" />
+                  <span className="text-xs text-teal-300">{signatureName}</span>
+                </div>
+                <button type="button" onClick={() => { setSignatureName(null); setSignatureDataUrl(null) }}
+                  className="text-xs text-slate-500 hover:text-red-400 transition mt-1">Remove</button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center h-20 w-48 rounded-lg border border-dashed border-slate-600 bg-slate-800/40 cursor-pointer hover:border-teal-600 hover:bg-teal-900/10 transition">
+                <FileUp className="h-4 w-4 text-slate-500 mb-1" />
+                <span className="text-xs text-slate-500">Upload Signature Image</span>
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { if (e.target.files?.[0]) handleSignatureUpload(e.target.files[0]) }} />
+              </label>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Print footer ── */}
+      <div className="print-footer">
+        <div className="flex justify-between text-xs">
+          <div>
+            <p className="font-bold">{user?.full_name}</p>
+            <p>{user?.role?.replace(/_/g, ' ')} · {user?.institution}</p>
+            <p>Badge: {user?.badge_number}</p>
+          </div>
+          <div className="text-right">
+            <p>Report generated: {format(new Date(), 'dd MMM yyyy HH:mm')}</p>
+            <p>Case Title: {caseInfo.title}</p>
+            <div className="mt-4 h-12 w-40 border-b border-black ml-auto" />
+            <p className="text-xs text-gray-500 mt-1">Signature</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom action bar ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 no-print bg-slate-950/95 backdrop-blur border-t border-slate-800 px-6 py-3">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+          <span className="text-xs text-slate-500 hidden sm:block">
+            {completion >= 80
+              ? <span className="text-teal-400 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" /> Ready to submit ({completion}%)</span>
+              : `${completion}% complete — fill required fields before submitting`}
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={handlePrint}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-400 hover:bg-slate-800 transition">
+              <Printer className="h-4 w-4" /> Print / PDF
+            </button>
+            <button
+              onClick={() => handleSubmit('DRAFT')}
+              disabled={submitting}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50 transition">
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Draft
+            </button>
+            <button
+              onClick={() => handleSubmit('SUBMITTED')}
+              disabled={submitting}
+              className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-50 transition">
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Create Case &amp; Submit Investigation
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}
