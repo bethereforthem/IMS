@@ -11,6 +11,7 @@ import { CommanderRescueButton } from './CommanderRescueButton'
 import { CommanderRescueAlertBanner } from './CommanderRescueAlertBanner'
 import { OfflineAgentBanner } from './OfflineAgentBanner'
 import { IntrusionAlertBanner } from './IntrusionAlertBanner'
+import { GlobalSearch } from './GlobalSearch'
 import { useAgentHeartbeat } from '@/hooks/useAgentHeartbeat'
 import { usePageTracking } from '@/hooks/usePageTracking'
 import { useGeoAudit } from '@/hooks/useGeoAudit'
@@ -167,7 +168,9 @@ export function DashboardShell({ nav, institutionLabel, children, badge }: Props
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex-1" />
+          <div className="flex-1 flex justify-center px-2">
+            <GlobalSearch />
+          </div>
 
           {badge && badge.count > 0 && (
             <div className={clsx(
