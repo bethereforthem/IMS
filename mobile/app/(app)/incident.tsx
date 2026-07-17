@@ -16,6 +16,7 @@ import {
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import * as Crypto from 'expo-crypto'
+import * as FileSystem from 'expo-file-system'
 import { useRouter } from 'expo-router'
 import { useAuth } from '@/hooks/useAuth'
 import { fieldReportApi } from '@/lib/api'
@@ -178,6 +179,29 @@ export default function IncidentScreen() {
       `${user?.user_id}-${title}-${Date.now()}`
     ).then(h => h.slice(0, 32))
 
+    // Upload any local media URIs to Supabase Storage and collect public URLs.
+    // Files that fail to upload are silently dropped so the report still goes through.
+    const uploadedUrls: string[] = []
+    for (const uri of mediaUris) {
+      try {
+        const info = await FileSystem.getInfoAsync(uri)
+        if (!info.exists) continue
+        const filename = uri.split('/').pop() ?? `media_${Date.now()}`
+        const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg'
+        const mimeMap: Record<string, string> = {
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+          webp: 'image/webp', heic: 'image/heic', heif: 'image/heif',
+          mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+          webm: 'video/webm',
+        }
+        const mimeType = mimeMap[ext] ?? 'application/octet-stream'
+        const res = await fieldReportApi.uploadMedia(uri, mimeType, filename)
+        if (res.data?.url) uploadedUrls.push(res.data.url)
+      } catch {
+        // Upload failure is non-fatal; report proceeds without this attachment
+      }
+    }
+
     const payload = {
       offline_id:           offlineId,
       title:                title.trim(),
@@ -189,7 +213,7 @@ export default function IncidentScreen() {
       location_lat:         coords?.lat ?? null,
       location_lng:         coords?.lng ?? null,
       location_description: locDesc.trim() || undefined,
-      media_urls:           mediaUris,
+      media_urls:           uploadedUrls,
     }
 
     try {
@@ -215,9 +239,9 @@ export default function IncidentScreen() {
       setOffline(false)
       setSubmitted(true)
     } catch {
-      // Network failure → queue locally
+      // Network failure → queue locally (with whatever URLs were uploaded before failure)
       try {
-        await enqueue({ ...payload, queued_at: new Date().toISOString() })
+        await enqueue({ ...payload, media_urls: uploadedUrls, queued_at: new Date().toISOString() })
         setOffline(true)
         setSubmitted(true)
       } catch {
