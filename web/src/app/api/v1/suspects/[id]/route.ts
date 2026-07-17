@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
-import { hasPermission } from '@/lib/rbac'
+import { hasPermission, CLEARANCE_RANK } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/suspects/[id]
@@ -19,12 +19,32 @@ export const GET = withAuth(async (req: NextRequest, { user, params }) => {
 
     const { data: suspect, error } = await supabase
       .from('suspects')
-      .select('*')
+      .select(`*,
+        case_suspects(role, cases(id, case_reference, title, status, lead_institution)),
+        warrants(id, warrant_type, charges, priority, active, issued_at),
+        corrections_records(id, facility_name, cell_block, custody_status, intake_date, release_date, actual_release_at, sentence_years, offense_description, court_name, next_review)`)
       .eq('id', id)
       .single()
 
     if (error || !suspect) {
       return apiError('Suspect not found', 404)
+    }
+
+    // Clearance gate: users can only open records at or below their own level
+    const userRank = CLEARANCE_RANK[user.clearance] ?? 0
+    const recordRank = CLEARANCE_RANK[suspect.clearance_level] ?? 0
+    if (recordRank > userRank && !hasPermission(user.role, 'suspects:classify')) {
+      await logAudit({
+        event_type: 'SUSPECT_READ_DENIED',
+        action: 'READ',
+        actor: user,
+        target_type: 'suspect',
+        target_id: id,
+      })
+      return apiError(
+        `Insufficient clearance — this record is classified ${suspect.clearance_level} and your clearance is ${user.clearance}`,
+        403
+      )
     }
 
     // Top-secret access gate: require justification unless user has suspects:classify
@@ -49,7 +69,19 @@ export const GET = withAuth(async (req: NextRequest, { user, params }) => {
       justification: justification ?? undefined,
     })
 
-    return apiSuccess(suspect)
+    // Flatten joined records for convenient client consumption
+    const linked_cases = (suspect.case_suspects ?? [])
+      .map((cs: Record<string, unknown>) => ({
+        ...(cs.cases as Record<string, unknown>),
+        role: cs.role,
+      }))
+      .filter((c: Record<string, unknown>) => c.id)
+
+    return apiSuccess({
+      ...suspect,
+      linked_cases,
+      case_suspects: undefined,
+    })
   } catch (err) {
     console.error('[GET /api/v1/suspects/[id]]', err)
     return apiError('Internal server error', 500)
