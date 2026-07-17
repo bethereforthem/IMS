@@ -2,19 +2,23 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { StatCard } from '@/components/shared/StatCard'
+import { CaseDetailModal } from '@/components/shared/CaseDetailModal'
 import { casesApi } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
-import { FileText, Clock, CheckCircle2, Lock, ExternalLink } from 'lucide-react'
+import {
+  FileText, Clock, CheckCircle2, Lock, ExternalLink,
+} from 'lucide-react'
 import type { Case } from '@/types'
 
 type Tab = 'active' | 'all'
 
 const STATUS_BADGE: Record<string, string> = {
+  OPEN:                'text-blue-400 bg-blue-950',
   UNDER_INVESTIGATION: 'text-amber-400 bg-amber-950',
-  PENDING_PROSECUTION: 'text-blue-400 bg-blue-950',
+  PROSECUTION:         'text-orange-400 bg-orange-950',
   CLOSED:              'text-green-400 bg-green-950',
-  SUSPENDED:           'text-slate-400 bg-slate-800',
+  COLD:                'text-slate-400 bg-slate-800',
 }
 
 const CLASSIFICATION_BADGE: Record<string, string> = {
@@ -33,12 +37,17 @@ const INSTITUTION_BADGE: Record<string, string> = {
 }
 
 const PROGRESS_CONFIG: Record<string, { pct: number; color: string; bg: string }> = {
-  UNDER_INVESTIGATION: { pct: 40, color: 'bg-amber-500', bg: 'bg-amber-950' },
-  PENDING_PROSECUTION: { pct: 75, color: 'bg-blue-500',  bg: 'bg-blue-950'  },
+  OPEN:                { pct: 15,  color: 'bg-blue-500',  bg: 'bg-blue-950'  },
+  UNDER_INVESTIGATION: { pct: 40,  color: 'bg-amber-500', bg: 'bg-amber-950' },
+  PROSECUTION:         { pct: 75,  color: 'bg-orange-500', bg: 'bg-orange-950' },
   CLOSED:              { pct: 100, color: 'bg-green-500', bg: 'bg-green-950' },
 }
 
-function CaseCard({ c }: { c: Case }) {
+const ACTIVE_STATUSES = ['OPEN', 'UNDER_INVESTIGATION', 'PROSECUTION']
+
+// ── Case Card ─────────────────────────────────────────────────────────────────
+
+function CaseCard({ c, onOpen }: { c: Case; onOpen: (id: string) => void }) {
   const progress = PROGRESS_CONFIG[c.status] ?? { pct: 0, color: 'bg-slate-600', bg: 'bg-slate-800' }
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 flex flex-col gap-3 hover:border-rib/20 transition-colors">
@@ -46,7 +55,7 @@ function CaseCard({ c }: { c: Case }) {
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-rib text-xs font-semibold">{c.case_reference}</span>
         <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', CLASSIFICATION_BADGE[c.classification] ?? 'text-slate-400 bg-slate-800')}>
-          {c.classification.replace('_', ' ')}
+          {c.classification?.replace('_', ' ') ?? '—'}
         </span>
       </div>
 
@@ -84,9 +93,8 @@ function CaseCard({ c }: { c: Case }) {
           Opened {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
         </span>
         <button
-          disabled
-          title="Available in production"
-          className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 border border-slate-700 rounded px-2 py-0.5 cursor-not-allowed"
+          onClick={() => onOpen(c.id)}
+          className="flex items-center gap-1 text-[10px] font-semibold text-rib border border-rib/30 rounded px-2 py-0.5 hover:bg-rib/10 transition-colors"
         >
           <ExternalLink className="h-3 w-3" />
           View Case
@@ -96,10 +104,13 @@ function CaseCard({ c }: { c: Case }) {
   )
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function RIBCasesPage() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('active')
   const [cases, setCases] = useState<Case[]>([])
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null)
 
   useEffect(() => {
     casesApi.list({ limit: 100 }).then(r => {
@@ -107,10 +118,10 @@ export default function RIBCasesPage() {
     }).catch(() => {})
   }, [])
 
-  const activeCases    = cases.filter(c => c.status === 'UNDER_INVESTIGATION')
-  const pendingCases   = cases.filter(c => c.status === 'PENDING_PROSECUTION')
-  const closedCases    = cases.filter(c => c.status === 'CLOSED')
-  const topSecretCount = cases.filter(c => c.classification === 'TOP_SECRET').length
+  const activeCases     = cases.filter(c => ACTIVE_STATUSES.includes(c.status))
+  const prosecutionCases = cases.filter(c => c.status === 'PROSECUTION')
+  const closedCases     = cases.filter(c => c.status === 'CLOSED')
+  const topSecretCount  = cases.filter(c => c.classification === 'TOP_SECRET').length
 
   const displayed = tab === 'active' ? activeCases : cases
 
@@ -130,8 +141,8 @@ export default function RIBCasesPage() {
 
       {/* Summary stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Active Cases" value={activeCases.length} icon={FileText} variant="warn" sub="Under investigation" />
-        <StatCard label="Pending Prosecution" value={pendingCases.length} icon={Clock} sub="Awaiting court" />
+        <StatCard label="Active Cases" value={activeCases.length} icon={FileText} variant="warn" sub="Open, investigating & prosecution" />
+        <StatCard label="In Prosecution" value={prosecutionCases.length} icon={Clock} sub="With NPPA / courts" />
         <StatCard label="Closed" value={closedCases.length} icon={CheckCircle2} sub="Resolved" />
         <StatCard label="TOP SECRET" value={topSecretCount} icon={Lock} variant="danger" sub="Cases — highest classification" />
       </div>
@@ -156,8 +167,15 @@ export default function RIBCasesPage() {
 
       {/* Case cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {displayed.map(c => <CaseCard key={c.id} c={c} />)}
+        {displayed.map(c => (
+          <CaseCard key={c.id} c={c} onOpen={setOpenCaseId} />
+        ))}
       </div>
+
+      {/* Case detail modal */}
+      {openCaseId && (
+        <CaseDetailModal caseId={openCaseId} onClose={() => setOpenCaseId(null)} />
+      )}
     </div>
   )
 }
