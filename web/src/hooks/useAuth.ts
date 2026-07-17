@@ -109,8 +109,9 @@ export function institutionColor(institution: Institution): string {
 }
 
 export function dashboardRoute(role: UserRole): string {
+  if (role === 'SYSTEM_ADMIN') return '/admin'
   if (role.startsWith('NISS') || role === 'SIEM_ANALYST') return '/niss'
-  if (role.startsWith('RNP') || role === 'SYSTEM_ADMIN') return '/rnp'
+  if (role.startsWith('RNP')) return '/rnp'
   if (role.startsWith('RIB')) return '/rib'
   if (role.startsWith('RDF')) return '/rdf'
   if (role.startsWith('RCS')) return '/rcs'
