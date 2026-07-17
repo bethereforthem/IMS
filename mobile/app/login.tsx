@@ -24,9 +24,13 @@ export default function LoginScreen() {
     try {
       await login(badge.trim(), password)
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { message?: string } } })
-        ?.response?.data?.message
-      setError(msg ?? 'Login failed. Check your credentials.')
+      const err = e as { response?: { status?: number; data?: { message?: string; error?: string } } }
+      if (!err?.response) {
+        setError('Cannot reach server. Make sure the web server is running (npm run dev) and your phone is on the same Wi-Fi.')
+      } else {
+        const msg = err.response.data?.message ?? err.response.data?.error
+        setError(msg ?? `Server error (HTTP ${err.response.status}).`)
+      }
     } finally {
       setLoading(false)
     }
