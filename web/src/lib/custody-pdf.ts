@@ -169,9 +169,8 @@ function gridTable(headers: string[], rows: (string | number | null | undefined)
 export async function generateCustodyPdf(
   record: Record<string, unknown>
 ): Promise<void> {
-  const pdfMake  = (await import('pdfmake/build/pdfmake')).default
-  const vfsFonts = (await import('pdfmake/build/vfs_fonts')).default
-  pdfMake.vfs = vfsFonts as unknown as Record<string, string>
+  const { getPdfMake } = await import('./pdf-fonts')
+  const { pdfMake, font: documentFont } = await getPdfMake()
 
   const suspects = record.suspects as Record<string, unknown> | null
   const name    = safe(suspects?.full_name ?? record.full_name)
@@ -427,13 +426,9 @@ export async function generateCustodyPdf(
       ],
     }),
     content,
-    defaultStyle: { font: 'Roboto', fontSize: 10, lineHeight: 1.3, color: '#000000' },
+    defaultStyle: { font: documentFont, fontSize: 10, lineHeight: 1.3, color: '#000000' },
   }
 
-  return new Promise<void>((resolve, reject) => {
-    pdfMake.createPdf(docDef).download(safeFilename, () => resolve())
-    // pdfmake's download doesn't throw — errors surface via callback or are silent
-    // give it a 10s timeout as a fallback
-    setTimeout(() => resolve(), 10_000)
-  })
+  // pdfmake 0.3: download() is promise-based
+  await pdfMake.createPdf(docDef).download(safeFilename)
 }
