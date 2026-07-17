@@ -11,12 +11,13 @@
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { trackingApi } from './api'
+import { trackingApi, heartbeatApi } from './api'
 
-const BACKGROUND_TASK = 'IMS_GPS_TRACKING_TASK'
-const PING_INTERVAL_MS = 15_000          // send ping every 15 s
-const HISTORY_KEY = 'ims_location_history'
-const MAX_HISTORY = 2000                  // keep last 2 000 points locally
+const BACKGROUND_TASK    = 'IMS_GPS_TRACKING_TASK'
+const PING_INTERVAL_MS   = 15_000   // send GPS ping every 15 s
+const HB_INTERVAL_MS     = 20_000   // send heartbeat every 20 s (< 90s OFFLINE_THRESHOLD)
+const HISTORY_KEY        = 'ims_location_history'
+const MAX_HISTORY        = 2000     // keep last 2 000 points locally
 
 export interface PingPoint {
   lat: number
@@ -48,25 +49,31 @@ TaskManager.defineTask(BACKGROUND_TASK, async ({ data, error }) => {
   }
 
   await appendHistory(point)
-  await trackingApi.ping(session.session_id, point).catch(() => {
-    // Network failure — ping already in local history; will not retry automatically
-  })
+  await Promise.allSettled([
+    trackingApi.ping(session.session_id, point),
+    // Heartbeat from background keeps agent ONLINE in agent_availability
+    heartbeatApi.send(point.lat, point.lng),
+  ])
 })
 
 // ── Foreground subscription ───────────────────────────────────────────────────
 let _subscription: Location.LocationSubscription | null = null
-let _pingTimer: ReturnType<typeof setInterval> | null = null
+let _pingTimer:      ReturnType<typeof setInterval> | null = null
+let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let _pendingPoint: PingPoint | null = null
 
 export async function startTracking(sessionId: string): Promise<boolean> {
   try {
     // Request foreground & background permissions
     const { status: fg } = await Location.requestForegroundPermissionsAsync()
-    if (fg !== 'granted') return false
-    const { status: bg } = await Location.requestBackgroundPermissionsAsync()
-    if (bg !== 'granted') {
-      // Background denied — foreground only
+    if (fg !== 'granted') {
+      // Location permission denied — report GPS disabled so server can alert command
+      heartbeatApi.sendOffline('GPS_DISABLED', null, null)
+      return false
     }
+    await Location.requestBackgroundPermissionsAsync().catch(() => {
+      // Background denied — fall through to foreground-only tracking
+    })
 
     // Start background location updates
     await Location.startLocationUpdatesAsync(BACKGROUND_TASK, {
@@ -80,7 +87,7 @@ export async function startTracking(sessionId: string): Promise<boolean> {
         notificationColor: '#a855f7',
       },
     }).catch(() => {
-      // Background task registration failed — fall back to foreground only
+      // Background task registration failed — foreground only
     })
 
     // Foreground watcher as fallback / supplement
@@ -98,7 +105,7 @@ export async function startTracking(sessionId: string): Promise<boolean> {
       }
     )
 
-    // Throttled ping timer
+    // Throttled GPS ping timer
     _pingTimer = setInterval(async () => {
       if (!_pendingPoint) return
       const point = _pendingPoint
@@ -107,6 +114,14 @@ export async function startTracking(sessionId: string): Promise<boolean> {
       await trackingApi.ping(sessionId, point).catch(() => {})
     }, PING_INTERVAL_MS)
 
+    // Independent heartbeat timer — keeps agent_availability ONLINE even when
+    // there are no GPS position changes (device stationary).
+    heartbeatApi.send(_pendingPoint?.lat, _pendingPoint?.lng)
+    _heartbeatTimer = setInterval(() => {
+      const pt = _pendingPoint
+      heartbeatApi.send(pt?.lat ?? null, pt?.lng ?? null)
+    }, HB_INTERVAL_MS)
+
     return true
   } catch {
     return false
@@ -114,14 +129,21 @@ export async function startTracking(sessionId: string): Promise<boolean> {
 }
 
 export async function stopTracking(): Promise<void> {
-  if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null }
-  if (_subscription) { _subscription.remove(); _subscription = null }
+  if (_pingTimer)      { clearInterval(_pingTimer);      _pingTimer      = null }
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null }
+  if (_subscription)   { _subscription.remove();         _subscription   = null }
+
+  const lastPoint = _pendingPoint
   _pendingPoint = null
 
   const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_TASK)
   if (isRegistered) {
     await Location.stopLocationUpdatesAsync(BACKGROUND_TASK).catch(() => {})
   }
+
+  // Proactively notify server so commander sees agent offline immediately
+  // rather than waiting for the 90s heartbeat timeout.
+  heartbeatApi.sendOffline('APP_TERMINATED', lastPoint?.lat ?? null, lastPoint?.lng ?? null)
 }
 
 export async function isTrackingActive(): Promise<boolean> {
