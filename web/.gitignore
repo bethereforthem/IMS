@@ -507,3 +507,5 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://ww
+# seed/verify tooling is real source, not build output
+!scripts/*.js
