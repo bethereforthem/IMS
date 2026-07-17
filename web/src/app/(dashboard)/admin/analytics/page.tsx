@@ -60,7 +60,7 @@ export default function AdminAnalyticsPage() {
     </div>
   )
 
-  const { summary, daily_logins, by_institution, by_role, by_incident_type, top_pages, daily_incidents, sessions_by_institution } = data
+  const { summary, daily_logins, by_institution, by_role, by_incident_type, top_pages, daily_incidents, sessions_by_institution, hourly_heatmap } = data
 
   return (
     <div>
@@ -175,7 +175,7 @@ export default function AdminAnalyticsPage() {
       </div>
 
       {/* Row 4: top pages + roles */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
 
         {/* Bar — top pages */}
         {chartBox('Top Pages — Last 7 Days',
@@ -202,6 +202,79 @@ export default function AdminAnalyticsPage() {
             </PieChart>
           </ResponsiveContainer>
         )}
+      </div>
+
+      {/* Row 5: Hourly activity heatmap */}
+      {chartBox('Login Activity Heatmap — Hour of Day vs Day of Week (Last 30 Days)',
+        <HourlyHeatmap data={hourly_heatmap ?? []} />
+      )}
+    </div>
+  )
+}
+
+// ── Hourly heatmap component (CSS grid — no extra deps) ──────────────────────
+
+const DAYS  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+function HourlyHeatmap({ data }: { data: Array<{ day: string; hour: number; value: number }> }) {
+  // Build lookup: day → hour → value
+  const lookup: Record<string, Record<number, number>> = {}
+  for (const d of data) {
+    if (!lookup[d.day]) lookup[d.day] = {}
+    lookup[d.day][d.hour] = d.value
+  }
+  const maxVal = Math.max(...data.map(d => d.value), 1)
+
+  function cellColor(value: number): string {
+    if (value === 0) return '#1e293b'
+    const intensity = value / maxVal
+    if (intensity > 0.75) return '#1d4ed8'
+    if (intensity > 0.5)  return '#2563eb'
+    if (intensity > 0.25) return '#3b82f6'
+    return '#93c5fd'
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: 600, padding: '4px 0' }}>
+        {/* Hour labels */}
+        <div style={{ display: 'flex', marginLeft: 36, marginBottom: 4 }}>
+          {HOURS.map(h => (
+            <div key={h} style={{ flex: 1, textAlign: 'center', fontSize: 8, color: '#475569' }}>
+              {h % 3 === 0 ? `${h}h` : ''}
+            </div>
+          ))}
+        </div>
+        {/* Rows */}
+        {DAYS.map(day => (
+          <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 2 }}>
+            <span style={{ width: 32, fontSize: 9, color: '#64748b', textAlign: 'right', paddingRight: 4, flexShrink: 0 }}>{day}</span>
+            {HOURS.map(h => {
+              const val = lookup[day]?.[h] ?? 0
+              return (
+                <div
+                  key={h}
+                  title={`${day} ${h}:00 — ${val} login${val !== 1 ? 's' : ''}`}
+                  style={{
+                    flex: 1, height: 18, borderRadius: 2,
+                    background: cellColor(val),
+                    cursor: val > 0 ? 'default' : undefined,
+                    transition: 'background 0.2s',
+                  }}
+                />
+              )
+            })}
+          </div>
+        ))}
+        {/* Legend */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, justifyContent: 'flex-end' }}>
+          <span style={{ fontSize: 9, color: '#475569' }}>Low</span>
+          {['#93c5fd', '#3b82f6', '#2563eb', '#1d4ed8'].map(c => (
+            <div key={c} style={{ width: 14, height: 10, borderRadius: 2, background: c }} />
+          ))}
+          <span style={{ fontSize: 9, color: '#475569' }}>High</span>
+        </div>
       </div>
     </div>
   )
