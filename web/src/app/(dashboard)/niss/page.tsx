@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { statsApi, siemApi, partnersApi } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
@@ -33,6 +34,7 @@ function SkeletonCard() {
 
 export default function NISSCommandCenter() {
   const { user } = useAuth()
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [events, setEvents] = useState<IntelligenceEvent[]>([])
@@ -360,7 +362,10 @@ export default function NISSCommandCenter() {
             </p>
             <div className="mt-3 flex items-center gap-3">
               {['NISS_DIRECTOR'].includes(user?.role ?? '') ? (
-                <button className="rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white hover:bg-red-600 transition">
+                <button
+                  onClick={() => router.push('/niss/lockdown')}
+                  className="rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white hover:bg-red-600 transition"
+                >
                   Initiate Lockdown
                 </button>
               ) : (
