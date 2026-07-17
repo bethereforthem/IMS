@@ -3,26 +3,30 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { casesApi } from '@/lib/api'
+import { CaseDetailModal } from '@/components/shared/CaseDetailModal'
 import { formatDistanceToNow } from 'date-fns'
-import { Briefcase, Search, Scale, CheckCircle, Clock } from 'lucide-react'
+import { Briefcase, Search, Scale, CheckCircle, Clock, FolderOpen, ExternalLink } from 'lucide-react'
 import clsx from 'clsx'
 import type { Case, ClearanceLevel } from '@/types'
 
-type CaseStatus = 'ALL' | 'UNDER_INVESTIGATION' | 'PENDING_PROSECUTION' | 'CLOSED'
+type CaseStatus = 'ALL' | 'OPEN' | 'UNDER_INVESTIGATION' | 'PROSECUTION' | 'CLOSED' | 'COLD'
 type ClassFilter = ClearanceLevel | 'ALL' | 'UNCLASSIFIED'
 
-const STATUS_FILTERS: CaseStatus[] = ['ALL', 'UNDER_INVESTIGATION', 'PENDING_PROSECUTION', 'CLOSED']
+const STATUS_FILTERS: CaseStatus[] = ['ALL', 'OPEN', 'UNDER_INVESTIGATION', 'PROSECUTION', 'CLOSED', 'COLD']
 const CLASS_FILTERS: (ClassFilter)[] = ['ALL', 'TOP_SECRET', 'SECRET', 'CONFIDENTIAL', 'UNCLASSIFIED']
 
 const statusBadge: Record<string, string> = {
+  OPEN: 'bg-blue-500/20 text-blue-400',
   UNDER_INVESTIGATION: 'bg-amber-500/20 text-amber-400',
-  PENDING_PROSECUTION: 'bg-blue-500/20 text-blue-400',
-  CLOSED: 'bg-slate-500/20 text-slate-400',
+  PROSECUTION: 'bg-orange-500/20 text-orange-400',
+  CLOSED: 'bg-green-500/20 text-green-400',
+  COLD: 'bg-slate-500/20 text-slate-400',
 }
 
 const statusIcon: Record<string, React.ElementType> = {
+  OPEN: FolderOpen,
   UNDER_INVESTIGATION: Search,
-  PENDING_PROSECUTION: Scale,
+  PROSECUTION: Scale,
   CLOSED: CheckCircle,
 }
 
@@ -38,6 +42,7 @@ export default function NISSCasesPage() {
   const [classFilter, setClassFilter] = useState<ClassFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<CaseStatus>('ALL')
   const [cases, setCases] = useState<Case[]>([])
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null)
 
   useEffect(() => {
     casesApi.list({ limit: 100 }).then((r) => {
@@ -52,7 +57,7 @@ export default function NISSCasesPage() {
   })
 
   const underInvestigation = cases.filter((c) => c.status === 'UNDER_INVESTIGATION').length
-  const pendingProsecution = cases.filter((c) => c.status === 'PENDING_PROSECUTION').length
+  const pendingProsecution = cases.filter((c) => c.status === 'PROSECUTION').length
   const closed = cases.filter((c) => c.status === 'CLOSED').length
 
   return (
@@ -131,12 +136,13 @@ export default function NISSCasesPage() {
                 <th className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Classification</th>
                 <th className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lead</th>
                 <th className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Opened</th>
+                <th className="px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider" />
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-600">
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-600">
                     No cases match the current filters.
                   </td>
                 </tr>
@@ -168,6 +174,15 @@ export default function NISSCasesPage() {
                     <td className="px-4 py-3 text-slate-500">
                       {formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}
                     </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setOpenCaseId(c.id)}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-niss border border-niss/30 rounded px-2 py-0.5 hover:bg-niss/10 transition-colors"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        View
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
@@ -175,6 +190,11 @@ export default function NISSCasesPage() {
           </table>
         </div>
       </div>
+
+      {/* Case detail modal */}
+      {openCaseId && (
+        <CaseDetailModal caseId={openCaseId} onClose={() => setOpenCaseId(null)} />
+      )}
     </div>
   )
 }
