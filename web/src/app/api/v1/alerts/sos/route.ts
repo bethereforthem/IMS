@@ -7,8 +7,9 @@ import type { AuthPayload } from '@/lib/rbac'
 // ---------------------------------------------------------------------------
 // POST /api/v1/alerts/sos
 // Emergency SOS from any authenticated user. Creates a CRITICAL alert visible
-// to all institutions + an intelligence event so the location appears on maps.
-// Also creates a field_report + agent_tracking_session for live GPS tracking.
+// to all institutions + a field_report + agent_tracking_session for live GPS
+// tracking on commander maps. The tracking session is the canonical map marker
+// (live, moves with the agent) — no static intelligence_event is created.
 // No special permission required beyond valid JWT auth.
 // ---------------------------------------------------------------------------
 export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayload; params?: Record<string, string> }) => {
@@ -31,35 +32,11 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       ? `Village leader ${user.full_name} (Badge: ${user.badge_number}) has triggered an emergency security alert and requires immediate RNP intervention.${locNote}${coordNote}${notes ? ' Note: ' + notes : ''}`
       : `Officer ${user.full_name} (${user.institution} · Badge: ${user.badge_number}) has activated an emergency SOS. Immediate response required.${locNote}${coordNote}${notes ? ' Note: ' + notes : ''}`
 
-    // 1. Create an intelligence event so GPS appears on commander maps
-    const { data: event, error: eventError } = await supabase
-      .from('intelligence_events')
-      .insert({
-        source_tag: 'OFFICER_REPORT',
-        suspect_id: null,
-        officer_id: user.user_id,
-        institution: user.institution,
-        location_lat: location_lat ?? null,
-        location_lng: location_lng ?? null,
-        location_description: location_description ?? null,
-        criminal_record_found: false,
-        alert_generated: false,
-        confidence: null,
-        notes: `SOS_EMERGENCY: ${message}`,
-        event_timestamp: new Date().toISOString(),
-      })
-      .select()
-      .single()
-
-    if (eventError) {
-      console.error('[alerts/sos POST] event insert error', eventError)
-    }
-
-    // 2. Create CRITICAL broadcast alert
+    // 1. Create CRITICAL broadcast alert
     const { data: alert, error: alertError } = await supabase
       .from('alerts')
       .insert({
-        intelligence_event_id: event?.id ?? null,
+        intelligence_event_id: null,
         suspect_id: null,
         severity: 'CRITICAL',
         source_tag: 'OFFICER_REPORT',
@@ -78,11 +55,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       return apiError('Failed to send SOS alert', 500)
     }
 
-    if (event) {
-      await supabase.from('intelligence_events').update({ alert_generated: true }).eq('id', event.id)
-    }
-
-    // 3. Create a field_report so the SOS appears on commander incident maps
+    // 2. Create a field_report so the SOS appears on commander incident maps
     let reportId: string | null = null
     let sessionId: string | null = null
 
@@ -101,7 +74,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
           location_lng: location_lng ?? null,
           location_description: location_description ?? null,
           alert_id: alert.id,
-          intelligence_event_id: event?.id ?? null,
+          intelligence_event_id: null,
           media_urls: [],
         })
         .select('id')
