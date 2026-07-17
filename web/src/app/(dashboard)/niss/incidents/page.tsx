@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { fieldReportsApi, agentTrackingApi, type WebFieldReport, type ActiveAgent } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   MapPin, RefreshCw, X, Shield, AlertTriangle,
@@ -349,10 +350,29 @@ export default function NISSIncidentsPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-refresh every 20 s for real-time updates
+  // Subscribe to Supabase Realtime for instant map updates when a new field
+  // report or agent ping is inserted, instead of polling every 20 s.
   useEffect(() => {
-    const id = setInterval(() => load(true), 20_000)
-    return () => clearInterval(id)
+    const ch = supabase
+      .channel('incidents-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'field_reports' },
+        () => load(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'field_reports' },
+        () => load(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'agent_location_pings' },
+        () => load(true)
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(ch) }
   }, [load])
 
   const displayed = reports.filter(r => {
