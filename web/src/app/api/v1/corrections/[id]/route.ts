@@ -55,7 +55,18 @@ export const PATCH = withAuth(async (req: NextRequest, { user, params }) => {
     const allowedFields = [
       'custody_status', 'release_date', 'threat_level',
       'next_review', 'notes', 'cell_block', 'facility_name',
-      'sentence_end', 'sentence_years',
+      'sentence_end', 'sentence_years', 'court_name', 'intake_date',
+      // Personal info
+      'father_name', 'mother_name', 'sex', 'place_of_birth',
+      'residential_address', 'domicile_address', 'phone_number', 'email',
+      'national_id', 'marital_status', 'profession', 'properties_owned',
+      'health_status', 'education_level', 'children_count', 'alternative_contact',
+      'party_status', 'passport_photo_url',
+      // Court conclusion
+      'presiding_judge', 'verdict_date', 'sentence_type', 'court_conclusion',
+      'offense_description',
+      // Visitor log
+      'visitor_log',
     ]
 
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
