@@ -171,6 +171,14 @@ export const fieldReportApi = {
 
   getMyReports: (limit = 10) =>
     client.get<{ reports: FieldReport[]; total: number }>(`/field-reports?limit=${limit}`),
+
+  uploadMedia: (fileUri: string, mimeType: string, filename: string) => {
+    const form = new FormData()
+    form.append('file', { uri: fileUri, type: mimeType, name: filename } as unknown as Blob)
+    return client.post<{ url: string; path: string }>('/field-reports/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 // ─── Agent Tracking ──────────────────────────────────────────────────────────
@@ -182,6 +190,16 @@ export interface TrackingPingPayload {
   accuracy_m?: number
   heading?: number
   speed_ms?: number
+}
+
+export interface ServerSession {
+  session_id: string
+  status: 'ACTIVE' | 'PAUSED'
+  started_at: string
+  total_pings: number
+  field_report_id: string
+  report_title: string | null
+  report_priority: string | null
 }
 
 export const trackingApi = {
@@ -197,6 +215,27 @@ export const trackingApi = {
     client.get<{ pings: Array<{ lat: number; lng: number; pinged_at: string }>; total: number }>(
       `/agent-tracking/sessions/${session_id}?limit=${limit}`
     ),
+
+  getMyActiveSession: () =>
+    client.get<{ session: ServerSession | null }>('/agent-tracking/sessions/my'),
+}
+
+// ─── Agent Heartbeat ─────────────────────────────────────────────────────────
+// Fire-and-forget — never throws; errors are silently ignored.
+
+export const heartbeatApi = {
+  send: (lat?: number | null, lng?: number | null) =>
+    client.post('/agent-tracking/heartbeat', {
+      location_lat: lat ?? null,
+      location_lng: lng ?? null,
+    }).catch(() => {}),
+
+  sendOffline: (reason: 'NO_NETWORK' | 'GPS_DISABLED' | 'APP_TERMINATED', lat?: number | null, lng?: number | null) =>
+    client.post('/agent-tracking/offline', {
+      reason,
+      location_lat: lat ?? null,
+      location_lng: lng ?? null,
+    }).catch(() => {}),
 }
 
 // Re-export the raw client for one-off calls
