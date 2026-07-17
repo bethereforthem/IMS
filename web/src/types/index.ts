@@ -31,6 +31,7 @@ export interface AuthUser {
   clearance_level: ClearanceLevel
   session_id: string
   exp: number
+  has_accepted_policies?: boolean
 }
 
 export interface TokenResponse {
