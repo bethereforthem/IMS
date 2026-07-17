@@ -188,6 +188,7 @@ export const GET = withAuth(async (_req: NextRequest, { user }: { user: AuthPayl
           last_ping_at:        latestPing?.pinged_at ?? avail?.last_heartbeat_at ?? null,
           report_title:        report?.title ?? null,
           report_priority:     report?.priority ?? null,
+          report_category:     report?.category ?? null,
           // Availability fields
           availability_status:  availStatus,
           offline_reason:       avail?.offline_reason ?? null,
