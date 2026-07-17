@@ -87,3 +87,11 @@ VALUES
  true, CURRENT_DATE)
 
 ON CONFLICT (policy_type, version) DO NOTHING;
+
+-- ── Add has_accepted_policies flag to users ───────────────────────────────────
+-- Tracks whether a user has ever completed the policy acceptance flow.
+-- Once set to TRUE it persists across sessions so the gate is shown only once.
+-- Admins can reset individual users to FALSE to force re-acceptance.
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS has_accepted_policies BOOLEAN NOT NULL DEFAULT FALSE;
