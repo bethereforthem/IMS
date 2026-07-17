@@ -98,6 +98,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const now = Math.floor(Date.now() / 1000)
   const ACCESS_TTL_SECONDS = 8 * 3600 // 8 hours
 
+  // 7b. Safely fetch has_accepted_policies — defaults false if column not yet migrated
+  let has_accepted_policies = false
+  try {
+    const { data: policyRow } = await db
+      .from('users')
+      .select('has_accepted_policies')
+      .eq('id', userId)
+      .single()
+    has_accepted_policies = (policyRow as { has_accepted_policies?: boolean } | null)?.has_accepted_policies ?? false
+  } catch { /* column not yet migrated — default false */ }
+
   // 8. Sign the full access token
   const accessToken = await signToken(
     {
@@ -109,6 +120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       role: user.role,
       clearance: user.clearance_level,
       clearance_level: user.clearance_level,
+      has_accepted_policies,
       session_id,
       type: 'access',
     },
@@ -167,6 +179,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       institution: user.institution,
       role: user.role,
       clearance_level: user.clearance_level,
+      has_accepted_policies,
       session_id,
       exp: now + ACCESS_TTL_SECONDS,
     },
