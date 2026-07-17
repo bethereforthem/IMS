@@ -40,6 +40,23 @@ export const POST = withAuth(
         return apiError('Failed to acknowledge alert', 500)
       }
 
+      // Close any active SOS tracking session linked to this alert so the
+      // agent disappears from the commander map immediately.
+      const { data: report } = await supabase
+        .from('field_reports')
+        .select('tracking_session_id')
+        .eq('alert_id', alert_id)
+        .eq('category', 'EMERGENCY')
+        .maybeSingle()
+
+      if (report?.tracking_session_id) {
+        await supabase
+          .from('agent_tracking_sessions')
+          .update({ status: 'CLOSED', closed_at: new Date().toISOString(), closed_by: user.user_id })
+          .eq('id', report.tracking_session_id)
+          .in('status', ['ACTIVE', 'PAUSED'])
+      }
+
       await logAudit({
         event_type: 'SOS_ACKNOWLEDGED',
         actor: user,
