@@ -16,6 +16,8 @@ const LocationMap = dynamic(() => import('./_LocationMap'), { ssr: false })
 
 // Convert real ActiveAgent records to the FieldAgent format the map expects
 function toFieldAgent(a: ActiveAgent): FieldAgent {
+  const isSos = a.report_category === 'EMERGENCY' && a.session_status === 'ACTIVE'
+  const status: FieldAgent['status'] = isSos ? 'SOS' : a.session_status === 'ACTIVE' ? 'ACTIVE' : 'OFFLINE'
   return {
     id: a.session_id,
     name: a.agent_name ?? 'Unknown Agent',
@@ -23,7 +25,7 @@ function toFieldAgent(a: ActiveAgent): FieldAgent {
     institution: a.agent_institution ?? 'NISS',
     lat: a.last_lat ?? 0,
     lng: a.last_lng ?? 0,
-    status: a.session_status === 'ACTIVE' ? 'ACTIVE' : 'OFFLINE',
+    status,
     heading: a.last_heading != null ? String(Math.round(a.last_heading)) : undefined,
     last_ping: a.last_ping_at ?? new Date().toISOString(),
   }
@@ -69,9 +71,9 @@ export default function NISSLocationPage() {
 
   useEffect(() => { fetchLocations() }, [fetchLocations])
 
-  // Auto-refresh every 20 s for near-real-time GPS updates
+  // Auto-refresh every 5 s for live GPS movement tracking
   useEffect(() => {
-    const id = setInterval(fetchLocations, 20_000)
+    const id = setInterval(fetchLocations, 5_000)
     return () => clearInterval(id)
   }, [fetchLocations])
 
@@ -91,6 +93,8 @@ export default function NISSLocationPage() {
 
   const sosAgents    = agents.filter(a => a.status === 'SOS')
   const activeAgents = agents.filter(a => a.status === 'ACTIVE')
+  // Map shows active agents + SOS agents; paused/offline are hidden from the map
+  const mapAgents    = agents.filter(a => a.status === 'ACTIVE' || a.status === 'SOS')
   const cctvHits     = locations.filter(e => e.source_tag === 'CCTV_NODE').length
 
   const handleTransmit = () => {
@@ -172,7 +176,7 @@ export default function NISSLocationPage() {
         >
           <LocationMap
             locations={locations}
-            agents={agents}
+            agents={mapAgents}
             alertEvents={alertEvents}
             onDirectAgent={(agent) => setDirection({ agent, message: '', sent: false })}
           />
