@@ -7,6 +7,7 @@ import {
   Brain, RefreshCw, TrendingUp, TrendingDown, Minus,
   Clock, MapPin, ShieldAlert, ChevronDown, ChevronUp,
   ThumbsUp, ThumbsDown, Lightbulb, Target, Users,
+  UserSearch, CalendarClock, Navigation, Fingerprint, Zap,
 } from 'lucide-react'
 import { BarChart, Bar, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -39,7 +40,7 @@ export default function AIIntelligencePanel() {
   const [analyzing,    setAnalyzing]    = useState(false)
   const [loadState,    setLoadState]    = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [errorMsg,     setErrorMsg]     = useState('')
-  const [view,         setView]         = useState<'map' | 'list' | 'insights'>('map')
+  const [view,         setView]         = useState<'map' | 'list' | 'insights' | 'analysis'>('map')
   const [expanded,     setExpanded]     = useState<Set<string>>(new Set())
   const [feedback,     setFeedback]     = useState<Record<string, boolean>>({})
   const [feedbackMsg,  setFeedbackMsg]  = useState('')
@@ -91,8 +92,9 @@ export default function AIIntelligencePanel() {
       setLoadState('done')
       if (d.predictions.length > 0) setView('map')
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message
-        : (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Analysis failed'
+      // Prefer the API's error message over the generic Axios "status code 500" message
+      const apiMsg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      const msg = apiMsg ?? (e instanceof Error ? e.message : 'Analysis failed')
       setErrorMsg(msg)
     } finally {
       setAnalyzing(false)
@@ -276,9 +278,10 @@ export default function AIIntelligencePanel() {
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: '4px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', padding: '4px' }}>
             {([
-              { id: 'map', icon: <MapPin style={{ width: 14, height: 14 }} />, label: `Map (${predictions.length})` },
-              { id: 'list', icon: <Target style={{ width: 14, height: 14 }} />, label: 'Hotspots' },
-              { id: 'insights', icon: <Lightbulb style={{ width: 14, height: 14 }} />, label: `Insights (${insights.length})` },
+              { id: 'map',      icon: <MapPin      style={{ width: 14, height: 14 }} />, label: `Map (${predictions.length})` },
+              { id: 'list',     icon: <Target      style={{ width: 14, height: 14 }} />, label: 'Hotspots' },
+              { id: 'analysis', icon: <Brain       style={{ width: 14, height: 14 }} />, label: 'Crime Analysis' },
+              { id: 'insights', icon: <Lightbulb  style={{ width: 14, height: 14 }} />, label: `Insights (${insights.filter(i => !['WHO_ANALYSIS','WHEN_ANALYSIS','WHERE_ANALYSIS','HOW_ANALYSIS','CRIME_PREDICTIONS'].includes(i.insight_type)).length})` },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -537,14 +540,79 @@ export default function AIIntelligencePanel() {
             </div>
           )}
 
+          {/* CRIME ANALYSIS VIEW */}
+          {view === 'analysis' && (() => {
+            const analysisTypes = ['WHO_ANALYSIS', 'WHEN_ANALYSIS', 'WHERE_ANALYSIS', 'HOW_ANALYSIS', 'CRIME_PREDICTIONS'] as const
+            const config: Record<string, { icon: React.ReactNode; color: string; bg: string; label: string }> = {
+              WHO_ANALYSIS:       { icon: <UserSearch  style={{ width: 16, height: 16 }} />, color: '#a855f7', bg: '#2e1065', label: 'Who Commits Crimes' },
+              WHEN_ANALYSIS:      { icon: <CalendarClock style={{ width: 16, height: 16 }} />, color: '#3b82f6', bg: '#1e3a5f', label: 'When Crimes Occur' },
+              WHERE_ANALYSIS:     { icon: <Navigation  style={{ width: 16, height: 16 }} />, color: '#22c55e', bg: '#052e16', label: 'Where Crimes Concentrate' },
+              HOW_ANALYSIS:       { icon: <Fingerprint style={{ width: 16, height: 16 }} />, color: '#f97316', bg: '#431407', label: 'How Crimes Are Committed' },
+              CRIME_PREDICTIONS:  { icon: <Zap         style={{ width: 16, height: 16 }} />, color: '#ef4444', bg: '#450a0a', label: 'Future Crime Predictions' },
+            }
+            const sections = analysisTypes
+              .map(type => ({ type, ins: insights.find(i => i.insight_type === type), cfg: config[type] }))
+              .filter(s => s.ins)
+
+            if (sections.length === 0) {
+              return (
+                <div style={{ padding: '60px 24px', textAlign: 'center', background: '#0f172a', border: '1px dashed #334155', borderRadius: '12px' }}>
+                  <Brain style={{ width: 36, height: 36, color: '#334155', margin: '0 auto 12px' }} />
+                  <p style={{ fontSize: '13px', color: '#64748b' }}>No crime analysis available. Run a new analysis to generate WHO/WHEN/WHERE/HOW breakdowns.</p>
+                </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ padding: '10px 14px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}>
+                  <p style={{ fontSize: '11px', color: '#64748b', margin: 0 }}>
+                    AI-generated intelligence assessment based on {stats?.incidents_analyzed ?? '?'} incidents, {' '}
+                    suspect profiles, active warrants, and case data over the past 90 days.
+                  </p>
+                </div>
+                {sections.map(({ type, ins, cfg }) => ins && (
+                  <div key={type} style={{
+                    background: '#0f172a',
+                    border: `1px solid ${cfg.color}33`,
+                    borderLeft: `4px solid ${cfg.color}`,
+                    borderRadius: '10px',
+                    padding: '16px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: '8px',
+                        background: cfg.bg,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: cfg.color, flexShrink: 0,
+                      }}>
+                        {cfg.icon}
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '13px', fontWeight: 800, color: '#f1f5f9', margin: 0 }}>{cfg.label}</p>
+                        <p style={{ fontSize: '10px', color: '#475569', margin: 0 }}>{type.replace('_', ' ')}</p>
+                      </div>
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.7, margin: 0 }}>
+                      {ins.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
           {/* INSIGHTS VIEW */}
-          {view === 'insights' && (
+          {view === 'insights' && (() => {
+            const ANALYSIS_TYPES = ['WHO_ANALYSIS','WHEN_ANALYSIS','WHERE_ANALYSIS','HOW_ANALYSIS','CRIME_PREDICTIONS']
+            const regularInsights = insights.filter(i => !ANALYSIS_TYPES.includes(i.insight_type))
+            return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {insights.length === 0 ? (
+              {regularInsights.length === 0 ? (
                 <div style={{ padding: '40px', textAlign: 'center', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '10px', color: '#64748b' }}>
                   No insights available. Run an analysis to generate insights.
                 </div>
-              ) : insights.map(ins => {
+              ) : regularInsights.map(ins => {
                 const priorityColor = RISK_COLOR[ins.priority] ?? '#64748b'
                 return (
                   <div key={ins.id} style={{
@@ -577,7 +645,8 @@ export default function AIIntelligencePanel() {
                 )
               })}
             </div>
-          )}
+            )
+          })()}
 
           {/* Footer */}
           {run && (
