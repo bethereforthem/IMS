@@ -21,9 +21,9 @@ export const GET = withAuth(
 
     if (error || !user) return apiError('User not found', 404)
 
-    const [{ data: sessions }, { data: attempts }] = await Promise.all([
+    const [{ data: sessions }, { data: attempts }, { data: pageVisits }] = await Promise.all([
       db.from('user_sessions')
-        .select('id, ip_address, device_type, browser, os, country_name, city, is_vpn, created_at, last_active_at, current_page, revoked, role')
+        .select('id, ip_address, device_type, browser, os, country_name, country_code, city, is_vpn, is_proxy, created_at, last_active_at, current_page, revoked, role')
         .eq('user_id', id)
         .order('created_at', { ascending: false })
         .limit(20),
@@ -32,9 +32,14 @@ export const GET = withAuth(
         .eq('user_id', id)
         .order('attempted_at', { ascending: false })
         .limit(30),
+      db.from('page_visits')
+        .select('id, page_path, page_title, entered_at, left_at, duration_seconds')
+        .eq('user_id', id)
+        .order('entered_at', { ascending: false })
+        .limit(50),
     ])
 
-    return apiSuccess({ user, sessions: sessions ?? [], login_attempts: attempts ?? [] })
+    return apiSuccess({ user, sessions: sessions ?? [], login_attempts: attempts ?? [], page_visits: pageVisits ?? [] })
   },
   'admin:users'
 )
