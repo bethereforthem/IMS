@@ -457,6 +457,70 @@ CREATE TABLE IF NOT EXISTS public.siem_events (
 );
 
 -- ----------------------------------------------------------------------------
+-- 3m-2. login_attempts — tracks all auth attempts for IDS / audit
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.login_attempts (
+  id              UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id         UUID          REFERENCES public.users(id) ON DELETE SET NULL,
+  badge_number    VARCHAR(50)   NOT NULL,
+  success         BOOLEAN       NOT NULL DEFAULT FALSE,
+  failure_reason  VARCHAR(50),
+  ip_address      VARCHAR(45),
+  user_agent      TEXT,
+  device_type     VARCHAR(20),
+  browser         VARCHAR(50),
+  os              VARCHAR(50),
+  country_code    VARCHAR(10),
+  country_name    VARCHAR(100),
+  city            VARCHAR(100),
+  latitude        NUMERIC(9,6),
+  longitude       NUMERIC(9,6),
+  is_vpn          BOOLEAN       DEFAULT FALSE,
+  is_proxy        BOOLEAN       DEFAULT FALSE,
+  isp             VARCHAR(200),
+  full_name       VARCHAR(255),
+  institution     VARCHAR(50),
+  role            VARCHAR(50),
+  attempted_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_badge
+  ON public.login_attempts(badge_number, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip
+  ON public.login_attempts(ip_address, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_user
+  ON public.login_attempts(user_id, attempted_at DESC);
+
+-- 3m-3. security_incidents — IDS-generated security events
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.security_incidents (
+  id              UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  incident_type   VARCHAR(100)  NOT NULL,
+  severity        VARCHAR(20)   NOT NULL CHECK (severity IN ('LOW','MEDIUM','HIGH','CRITICAL')),
+  user_id         UUID          REFERENCES public.users(id) ON DELETE SET NULL,
+  session_id      UUID,
+  badge_number    VARCHAR(50),
+  full_name       VARCHAR(255),
+  institution     VARCHAR(50),
+  ip_address      VARCHAR(45),
+  country_code    VARCHAR(10),
+  country_name    VARCHAR(100),
+  city            VARCHAR(100),
+  description     TEXT          NOT NULL,
+  raw_data        JSONB,
+  auto_blocked    BOOLEAN       NOT NULL DEFAULT FALSE,
+  alert_id        UUID          REFERENCES public.alerts(id) ON DELETE SET NULL,
+  resolved        BOOLEAN       NOT NULL DEFAULT FALSE,
+  resolved_at     TIMESTAMPTZ,
+  resolved_by     UUID          REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_incidents_type
+  ON public.security_incidents(incident_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_incidents_user
+  ON public.security_incidents(user_id, created_at DESC);
+
 -- 3n. audit_log — append-only, immutable (trigger enforced)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.audit_log (
@@ -760,6 +824,29 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ----------------------------------------------------------------------------
+-- 4d-2. Case reference auto-generation
+-- ----------------------------------------------------------------------------
+CREATE SEQUENCE IF NOT EXISTS public.case_ref_seq START 10;
+
+CREATE OR REPLACE FUNCTION public.generate_case_reference()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.case_reference IS NULL OR NEW.case_reference = '' THEN
+    NEW.case_reference := 'RWA-' || NEW.lead_institution::TEXT
+                          || '-' || TO_CHAR(NOW(), 'YYYY')
+                          || '-' || LPAD(NEXTVAL('public.case_ref_seq')::TEXT, 5, '0');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_cases_ref
+    BEFORE INSERT ON public.cases
+    FOR EACH ROW EXECUTE FUNCTION public.generate_case_reference();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- ----------------------------------------------------------------------------
 -- 4e. Location records immutability — no modifications allowed (purge only)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.prevent_location_modification()
@@ -880,6 +967,8 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- RLS for new tables
+ALTER TABLE public.login_attempts      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.security_incidents  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.nid_verifications   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.case_officers       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.interpol_notices    ENABLE ROW LEVEL SECURITY;
@@ -930,60 +1019,60 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- ----------------------------------------------------------------------------
 -- 6a. USERS
 -- Password for ALL sample accounts: IMS@Sample2026!
--- bcrypt hash (12 rounds): $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O
+-- bcrypt hash (12 rounds): $2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO
 -- ----------------------------------------------------------------------------
 
 -- NISS (National Intelligence and Security Service)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000001-0000-0000-0000-000000000001', 'NISS', 'NISS_DIRECTOR',  'TOP_SECRET',    'NISS-DIR-001',  'Jean-Pierre Habimana',              'jp.habimana@niss.gov.rw',       '+250788100001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000001-0000-0000-0000-000000000002', 'NISS', 'NISS_DIRECTOR',  'TOP_SECRET',    'NISS-DIR-002',  'Aimable Nzeyimana',                 'a.nzeyimana@niss.gov.rw',       '+250788100002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000001-0000-0000-0000-000000000003', 'NISS', 'NISS_OFFICER',   'TOP_SECRET',    'NISS-OFF-003',  'Claudine Mukasine',                 'c.mukasine@niss.gov.rw',        '+250788100003', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000001-0000-0000-0000-000000000004', 'NISS', 'NISS_OFFICER',   'SECRET',        'NISS-OFF-004',  'Patrick Rwigamba',                  'p.rwigamba@niss.gov.rw',        '+250788100004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000001-0000-0000-0000-000000000005', 'NISS', 'SIEM_ANALYST',   'SECRET',        'NISS-SIEM-005', 'Diane Ingabire',                    'd.ingabire@niss.gov.rw',        '+250788100005', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000001-0000-0000-0000-000000000001', 'NISS', 'NISS_DIRECTOR',  'TOP_SECRET',    'NISS-DIR-001',  'Jean-Pierre Habimana',              'jp.habimana@niss.gov.rw',       '+250788100001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000001-0000-0000-0000-000000000002', 'NISS', 'NISS_DIRECTOR',  'TOP_SECRET',    'NISS-DIR-002',  'Aimable Nzeyimana',                 'a.nzeyimana@niss.gov.rw',       '+250788100002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000001-0000-0000-0000-000000000003', 'NISS', 'NISS_OFFICER',   'TOP_SECRET',    'NISS-OFF-003',  'Claudine Mukasine',                 'c.mukasine@niss.gov.rw',        '+250788100003', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000001-0000-0000-0000-000000000004', 'NISS', 'NISS_OFFICER',   'SECRET',        'NISS-OFF-004',  'Patrick Rwigamba',                  'p.rwigamba@niss.gov.rw',        '+250788100004', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000001-0000-0000-0000-000000000005', 'NISS', 'SIEM_ANALYST',   'SECRET',        'NISS-SIEM-005', 'Diane Ingabire',                    'd.ingabire@niss.gov.rw',        '+250788100005', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 -- RNP (Rwanda National Police)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000002-0000-0000-0000-000000000001', 'RNP', 'RNP_COMMANDER',  'SECRET',        'RNP-CMD-001',  'Commissaire Bernard Nkurunziza',     'b.nkurunziza@rnp.gov.rw',       '+250788200001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000002', 'RNP', 'RNP_COMMANDER',  'SECRET',        'RNP-CMD-002',  'Commissaire Alice Mukamana',          'a.mukamana@rnp.gov.rw',         '+250788200002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000003', 'RNP', 'RNP_DETECTIVE',  'SECRET',        'RNP-DET-003',  'Inspecteur Théogène Bizimana',        't.bizimana@rnp.gov.rw',         '+250788200003', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000004', 'RNP', 'RNP_DETECTIVE',  'CONFIDENTIAL',  'RNP-DET-004',  'Inspecteur Grace Uwimana',            'g.uwimana@rnp.gov.rw',          '+250788200004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000005', 'RNP', 'RNP_DETECTIVE',  'CONFIDENTIAL',  'RNP-DET-005',  'Inspecteur Emmanuel Nshimiyimana',    'e.nshimiyimana@rnp.gov.rw',     '+250788200005', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000006', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-006',  'Agent Jacqueline Mukamurenzi',        'j.mukamurenzi@rnp.gov.rw',      '+250788200006', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000007', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-007',  'Agent François Nzabonimpa',           'f.nzabonimpa@rnp.gov.rw',       '+250788200007', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000008', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-008',  'Agent Solange Uwera',                 's.uwera@rnp.gov.rw',            '+250788200008', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000002-0000-0000-0000-000000000009', 'RNP', 'SYSTEM_ADMIN',   'SECRET',        'RNP-ADM-009',  'Ingénieur Oscar Karangwa',            'o.karangwa@rnp.gov.rw',         '+250788200009', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000002-0000-0000-0000-000000000001', 'RNP', 'RNP_COMMANDER',  'SECRET',        'RNP-CMD-001',  'Commissaire Bernard Nkurunziza',     'b.nkurunziza@rnp.gov.rw',       '+250788200001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000002', 'RNP', 'RNP_COMMANDER',  'SECRET',        'RNP-CMD-002',  'Commissaire Alice Mukamana',          'a.mukamana@rnp.gov.rw',         '+250788200002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000003', 'RNP', 'RNP_DETECTIVE',  'SECRET',        'RNP-DET-003',  'Inspecteur Théogène Bizimana',        't.bizimana@rnp.gov.rw',         '+250788200003', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000004', 'RNP', 'RNP_DETECTIVE',  'CONFIDENTIAL',  'RNP-DET-004',  'Inspecteur Grace Uwimana',            'g.uwimana@rnp.gov.rw',          '+250788200004', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000005', 'RNP', 'RNP_DETECTIVE',  'CONFIDENTIAL',  'RNP-DET-005',  'Inspecteur Emmanuel Nshimiyimana',    'e.nshimiyimana@rnp.gov.rw',     '+250788200005', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000006', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-006',  'Agent Jacqueline Mukamurenzi',        'j.mukamurenzi@rnp.gov.rw',      '+250788200006', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000007', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-007',  'Agent François Nzabonimpa',           'f.nzabonimpa@rnp.gov.rw',       '+250788200007', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000008', 'RNP', 'RNP_PATROL',     'UNCLASSIFIED',  'RNP-PAT-008',  'Agent Solange Uwera',                 's.uwera@rnp.gov.rw',            '+250788200008', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000002-0000-0000-0000-000000000009', 'RNP', 'SYSTEM_ADMIN',   'SECRET',        'RNP-ADM-009',  'Ingénieur Oscar Karangwa',            'o.karangwa@rnp.gov.rw',         '+250788200009', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 -- RIB (Rwanda Investigation Bureau)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000003-0000-0000-0000-000000000001', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-001',  'Investigateur Pascal Habimana',       'p.habimana@rib.gov.rw',         '+250788300001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000003-0000-0000-0000-000000000002', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-002',  'Investigatrice Rose Kayitesi',         'r.kayitesi@rib.gov.rw',         '+250788300002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000003-0000-0000-0000-000000000003', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-003',  'Investigateur Sylvain Ndayisaba',      's.ndayisaba@rib.gov.rw',        '+250788300003', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000003-0000-0000-0000-000000000004', 'RIB', 'RIB_ANALYST',    'CONFIDENTIAL',  'RIB-ANA-004',  'Analyste Martine Uwiringiyimana',      'm.uwiringiyimana@rib.gov.rw',   '+250788300004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000003-0000-0000-0000-000000000005', 'RIB', 'RIB_ANALYST',    'CONFIDENTIAL',  'RIB-ANA-005',  'Analyste Christian Niyonsenga',        'c.niyonsenga@rib.gov.rw',       '+250788300005', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000003-0000-0000-0000-000000000001', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-001',  'Investigateur Pascal Habimana',       'p.habimana@rib.gov.rw',         '+250788300001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000003-0000-0000-0000-000000000002', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-002',  'Investigatrice Rose Kayitesi',         'r.kayitesi@rib.gov.rw',         '+250788300002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000003-0000-0000-0000-000000000003', 'RIB', 'RIB_INVESTIGATOR','SECRET',        'RIB-INV-003',  'Investigateur Sylvain Ndayisaba',      's.ndayisaba@rib.gov.rw',        '+250788300003', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000003-0000-0000-0000-000000000004', 'RIB', 'RIB_ANALYST',    'CONFIDENTIAL',  'RIB-ANA-004',  'Analyste Martine Uwiringiyimana',      'm.uwiringiyimana@rib.gov.rw',   '+250788300004', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000003-0000-0000-0000-000000000005', 'RIB', 'RIB_ANALYST',    'CONFIDENTIAL',  'RIB-ANA-005',  'Analyste Christian Niyonsenga',        'c.niyonsenga@rib.gov.rw',       '+250788300005', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 -- RDF (Rwanda Defence Force)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000004-0000-0000-0000-000000000001', 'RDF', 'RDF_COMMANDER',       'SECRET',        'RDF-CMD-001',  'Colonel Théophile Buregeya',          't.buregeya@rdf.mil.rw',         '+250788400001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000004-0000-0000-0000-000000000002', 'RDF', 'RDF_COMMANDER',       'SECRET',        'RDF-CMD-002',  'Lieutenant-Colonel Vénuste Hakizimana','v.hakizimana@rdf.mil.rw',       '+250788400002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000004-0000-0000-0000-000000000003', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-003',  'Sergent Janvier Nkurikiyimana',       'j.nkurikiyimana@rdf.mil.rw',    '+250788400003', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000004-0000-0000-0000-000000000004', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-004',  'Sergent Espérance Murorunkwere',      'e.murorunkwere@rdf.mil.rw',     '+250788400004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000004-0000-0000-0000-000000000005', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-005',  'Caporal John Rugamba',                'j.rugamba@rdf.mil.rw',          '+250788400005', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000004-0000-0000-0000-000000000001', 'RDF', 'RDF_COMMANDER',       'SECRET',        'RDF-CMD-001',  'Colonel Théophile Buregeya',          't.buregeya@rdf.mil.rw',         '+250788400001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000004-0000-0000-0000-000000000002', 'RDF', 'RDF_COMMANDER',       'SECRET',        'RDF-CMD-002',  'Lieutenant-Colonel Vénuste Hakizimana','v.hakizimana@rdf.mil.rw',       '+250788400002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000004-0000-0000-0000-000000000003', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-003',  'Sergent Janvier Nkurikiyimana',       'j.nkurikiyimana@rdf.mil.rw',    '+250788400003', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000004-0000-0000-0000-000000000004', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-004',  'Sergent Espérance Murorunkwere',      'e.murorunkwere@rdf.mil.rw',     '+250788400004', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000004-0000-0000-0000-000000000005', 'RDF', 'RDF_BORDER_OFFICER',  'CONFIDENTIAL',  'RDF-BRD-005',  'Caporal John Rugamba',                'j.rugamba@rdf.mil.rw',          '+250788400005', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 -- RCS (Rwanda Correctional Service)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000005-0000-0000-0000-000000000001', 'RCS', 'RCS_SUPERINTENDENT','CONFIDENTIAL',  'RCS-SUP-001',  'Surintendant Joseph Muvunyi',         'j.muvunyi@rcs.gov.rw',          '+250788500001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000005-0000-0000-0000-000000000002', 'RCS', 'RCS_SUPERINTENDENT','CONFIDENTIAL',  'RCS-SUP-002',  'Surintendante Chantal Nyiransabimana', 'c.nyiransabimana@rcs.gov.rw',   '+250788500002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000005-0000-0000-0000-000000000003', 'RCS', 'RCS_OFFICER',       'UNCLASSIFIED',  'RCS-OFF-003',  'Agent de correction Didier Rutagengwa','d.rutagengwa@rcs.gov.rw',       '+250788500003', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000005-0000-0000-0000-000000000004', 'RCS', 'RCS_OFFICER',       'UNCLASSIFIED',  'RCS-OFF-004',  'Agente de correction Immaculée Mukandori','i.mukandori@rcs.gov.rw',    '+250788500004', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000005-0000-0000-0000-000000000001', 'RCS', 'RCS_SUPERINTENDENT','CONFIDENTIAL',  'RCS-SUP-001',  'Surintendant Joseph Muvunyi',         'j.muvunyi@rcs.gov.rw',          '+250788500001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000005-0000-0000-0000-000000000002', 'RCS', 'RCS_SUPERINTENDENT','CONFIDENTIAL',  'RCS-SUP-002',  'Surintendante Chantal Nyiransabimana', 'c.nyiransabimana@rcs.gov.rw',   '+250788500002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000005-0000-0000-0000-000000000003', 'RCS', 'RCS_OFFICER',       'UNCLASSIFIED',  'RCS-OFF-003',  'Agent de correction Didier Rutagengwa','d.rutagengwa@rcs.gov.rw',       '+250788500003', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000005-0000-0000-0000-000000000004', 'RCS', 'RCS_OFFICER',       'UNCLASSIFIED',  'RCS-OFF-004',  'Agente de correction Immaculée Mukandori','i.mukandori@rcs.gov.rw',    '+250788500004', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 -- VILLAGE LEADERS (community intelligence reporting — limited access)
@@ -1010,10 +1099,10 @@ WHERE institution IN ('IRONDO', 'DASSO');
 -- Fresh insert for new databases (skipped automatically if upgrade above already ran)
 INSERT INTO public.users (id, institution, role, clearance_level, badge_number, full_name, email, phone, password_hash, active)
 VALUES
-  ('a0000006-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-001', 'Augustin Harerimana',  'a.harerimana@village.gov.rw',  '+250788600001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000006-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-002', 'Félicité Mukabagwiza', 'f.mukabagwiza@village.gov.rw', '+250788600002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000007-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-003', 'Révérien Nsengimana',  'r.nsengimana@village.gov.rw',  '+250788700001', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE),
-  ('a0000007-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-004', 'Vestine Umulisa',      'v.umulisa@village.gov.rw',     '+250788700002', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGniuM4UMpaSMVNpQHs5z3z2B0O', TRUE)
+  ('a0000006-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-001', 'Augustin Harerimana',  'a.harerimana@village.gov.rw',  '+250788600001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000006-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-002', 'Félicité Mukabagwiza', 'f.mukabagwiza@village.gov.rw', '+250788600002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000007-0000-0000-0000-000000000001', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-003', 'Révérien Nsengimana',  'r.nsengimana@village.gov.rw',  '+250788700001', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE),
+  ('a0000007-0000-0000-0000-000000000002', 'VILLAGE_LEADER', 'VILLAGE_LEADER', 'UNCLASSIFIED', 'VL-004', 'Vestine Umulisa',      'v.umulisa@village.gov.rw',     '+250788700002', '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO', TRUE)
 ON CONFLICT (badge_number) DO NOTHING;
 
 
@@ -1914,6 +2003,224 @@ VALUES
   ('90000000-0000-0000-0000-000000000002', 'KEN', 'Kenya',                    '🇰🇪', 'ACTIVE', FALSE, '2027-06-30', 1, TRUE),
   ('90000000-0000-0000-0000-000000000003', 'COD', 'Democratic Republic of Congo','🇨🇩', 'ACTIVE', FALSE, '2026-12-31', 2, TRUE)
 ON CONFLICT (country_code) DO NOTHING;
+
+
+-- ============================================================================
+-- INTAKE FORM EXPANSION — corrections_records extended columns
+-- ============================================================================
+-- Personal demographic information
+ALTER TABLE public.corrections_records
+  ADD COLUMN IF NOT EXISTS father_name          VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS mother_name          VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS sex                  VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS place_of_birth       VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS residential_address  TEXT,
+  ADD COLUMN IF NOT EXISTS domicile_address     TEXT,
+  ADD COLUMN IF NOT EXISTS phone_number         VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS email                VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS national_id          VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS marital_status       VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS profession           VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS properties_owned     TEXT,
+  ADD COLUMN IF NOT EXISTS health_status        TEXT,
+  ADD COLUMN IF NOT EXISTS education_level      VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS children_count       INTEGER,
+  ADD COLUMN IF NOT EXISTS alternative_contact  TEXT,
+  ADD COLUMN IF NOT EXISTS party_status         VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS passport_photo_url   TEXT;
+
+-- Court conclusion fields
+ALTER TABLE public.corrections_records
+  ADD COLUMN IF NOT EXISTS presiding_judge      VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS verdict_date         DATE,
+  ADD COLUMN IF NOT EXISTS sentence_type        VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS court_conclusion     TEXT;
+
+-- Visitor log (stored as JSONB array of visitor entries)
+ALTER TABLE public.corrections_records
+  ADD COLUMN IF NOT EXISTS visitor_log          JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ============================================================================
+-- RESET ALL SEED USER PASSWORDS
+-- Default password for ALL seed accounts: Admin@IMS2026!
+-- bcryptjs-compatible $2a$12$ hash generated by bcryptjs v2.x
+-- Run this any time you need to restore known credentials (e.g. after a DB reset).
+-- ============================================================================
+UPDATE public.users
+SET password_hash = '$2a$12$R5pMO0IqJBnOM6P9k/YHceUaeH8NddQxiZ5ZZ90sileD.g58Y6unO',
+    locked        = FALSE,
+    active        = TRUE,
+    mfa_failures  = 0;
+
+
+-- ============================================================================
+-- CORRECTIONS RECORDS — SEED DATA REFRESH (updated format with all new columns)
+-- Deletes the 5 old-format records and re-inserts 2 fully-populated records.
+-- Safe to re-run: DELETE removes whatever is there, INSERT re-creates fresh.
+-- ============================================================================
+
+DELETE FROM public.corrections_records
+WHERE id IN (
+  '80000000-0000-0000-0000-000000000001',
+  '80000000-0000-0000-0000-000000000002',
+  '80000000-0000-0000-0000-000000000003',
+  '80000000-0000-0000-0000-000000000004',
+  '80000000-0000-0000-0000-000000000005'
+);
+
+INSERT INTO public.corrections_records (
+  id, suspect_id, case_id,
+  facility_name, cell_block, custody_status,
+  intake_date, sentence_start, sentence_end, sentence_years,
+  offense_description, court_name, next_review, release_date, threat_level, notes,
+  father_name, mother_name, sex, place_of_birth,
+  residential_address, domicile_address, phone_number, email,
+  national_id, marital_status, profession, properties_owned,
+  health_status, education_level, children_count, alternative_contact,
+  party_status, passport_photo_url,
+  presiding_judge, verdict_date, sentence_type, court_conclusion,
+  visitor_log
+)
+VALUES
+
+-- CR1: Fidele Hakizimana — PRE_TRIAL, Mageragere (corruption / bribery)
+(
+  '80000000-0000-0000-0000-000000000001',
+  'b0000000-0000-0000-0000-000000000007',
+  'd0000000-0000-0000-0000-000000000006',
+  'Mageragere', 'C-7', 'PRE_TRIAL',
+  '2026-06-15 14:00:00+02', NULL, NULL, NULL,
+  'Corruption and abuse of office — solicitation and receipt of bribes as a senior civil servant in the Ministry of Finance across a period of 3 years (2023–2026). RIB investigation file RIB/INV/2026/0041.',
+  'Tribunal de Grande Instance de Kigali',
+  '2026-07-28', NULL, 3,
+  'Recent intake. First offence on record. RIB investigation ongoing. Financial documents seized. Behaviour: cooperative.',
+  -- Personal demographic fields
+  'Emmanuel Hakizimana',
+  'Vestine Mukamana',
+  'Male',
+  'Gasabo District, Kigali City',
+  'KG 15 Avenue, Gisozi, Kigali',
+  'Gasabo District, Kigali City',
+  '+250788123456',
+  'fidele.hakizimana@gmail.com',
+  '1197280014566789',
+  'Married',
+  'Civil Servant — Ministry of Finance, Grade A1',
+  'Residential house in Gisozi (KG 15 Ave, Kigali); Toyota Corolla 2019 (RAC 412G); Savings account — Bank of Kigali',
+  'Generally good health. No chronic conditions reported. Annual medical check completed May 2026.',
+  'Bachelor of Economics — National University of Rwanda (2002); Masters in Public Finance — University of Kigali (2007)',
+  2,
+  'Spouse: Marie Claire Mukamana — +250785678901 (KG 15 Ave, Gisozi, Kigali)',
+  'Accused',
+  NULL,
+  -- Court conclusion (pre-trial — not yet sentenced)
+  NULL, NULL, NULL, NULL,
+  -- Visitor log
+  '[
+    {
+      "id": "vis-cr1-001",
+      "visitor_name": "Marie Claire Mukamana",
+      "relationship": "Spouse",
+      "national_id": "1199985014567890",
+      "phone": "+250785678901",
+      "visit_date": "2026-06-20",
+      "visit_purpose": "Family visit",
+      "duration_minutes": 60,
+      "officer_on_duty": "Off. Mugisha Jean",
+      "notes": "Routine family visit. Documents verified. No contraband detected."
+    },
+    {
+      "id": "vis-cr1-002",
+      "visitor_name": "Me. Celestin Nzabonimpa",
+      "relationship": "Legal Counsel",
+      "national_id": "1197880029876543",
+      "phone": "+250722987654",
+      "visit_date": "2026-06-25",
+      "visit_purpose": "Legal consultation — case preparation",
+      "duration_minutes": 90,
+      "officer_on_duty": "Off. Uwamahoro Diane",
+      "notes": "Attorney–client session. Case files reviewed. No security incidents."
+    }
+  ]'::jsonb
+),
+
+-- CR2: Pierre Nsengiyumva — SENTENCED 25 years, Nyarugenge (murder)
+(
+  '80000000-0000-0000-0000-000000000002',
+  'b0000000-0000-0000-0000-000000000003',
+  'd0000000-0000-0000-0000-000000000005',
+  'Nyarugenge', 'A-1', 'SENTENCED',
+  '2024-01-20 09:00:00+02', '2024-01-20', '2049-01-20', 25,
+  'Murder — first degree with premeditation. Victim: Innocent Nkurunziza, 42, found deceased at his residence, Remera sector, Kigali, on 12 January 2024. Conviction: 15 January 2024. Case file: TGI/KGL/2024/0008.',
+  'Tribunal de Grande Instance de Kigali',
+  '2027-01-20', '2049-01-20', 4,
+  'Medium security wing. Behaviour: generally cooperative. No escape attempts on record. Annual review scheduled January 2027. Hypertension managed with prescribed medication.',
+  -- Personal demographic fields
+  'Théophile Nsengiyumva',
+  'Alphonsine Uwimana',
+  'Male',
+  'Rubavu District, Western Province',
+  'KN 5 Road, Nyarugenge, Kigali',
+  'Nyabihu Sector, Rubavu District, Western Province',
+  '+250722345678',
+  NULL,
+  '1198580021456789',
+  'Single',
+  'Motor vehicle mechanic — freelance',
+  'No significant assets identified at time of intake. One mobile phone (Samsung, seized as evidence).',
+  'Hypertension — prescribed Amlodipine 5mg once daily. Medical review every 6 months. No other chronic conditions.',
+  'Secondary School Certificate S6 — Lycée de Rubavu (2005)',
+  0,
+  'Uncle: Alphonse Nshimiyimana — +250725432109 (Rubavu District)',
+  'Convicted',
+  NULL,
+  -- Court conclusion
+  'Juge Jean-Pierre Nkurunziza',
+  '2024-01-15',
+  'Custodial Sentence',
+  'The court, having considered all evidence presented by the prosecution and defence counsel, finds the accused Pierre Nsengiyumva GUILTY beyond reasonable doubt on the charge of murder in the first degree with premeditation, in violation of Article 110 of the Penal Code. Aggravating circumstances — premeditation, use of a weapon, and the accused''s prior record of violence — are confirmed. The court sentences the accused to TWENTY-FIVE (25) YEARS of custodial imprisonment commencing 20 January 2024, with no eligibility for parole within the first fifteen (15) years. Court costs are borne by the convicted. Right of appeal within 30 days is hereby notified.',
+  -- Visitor log
+  '[
+    {
+      "id": "vis-cr2-001",
+      "visitor_name": "Alphonse Nshimiyimana",
+      "relationship": "Uncle",
+      "national_id": "1196580017654321",
+      "phone": "+250725432109",
+      "visit_date": "2024-06-10",
+      "visit_purpose": "Family visit",
+      "duration_minutes": 45,
+      "officer_on_duty": "Off. Kamanzi Patrick",
+      "notes": "Brought approved personal effects (clothing, hygiene items). Documents verified. No incidents."
+    },
+    {
+      "id": "vis-cr2-002",
+      "visitor_name": "Me. Alice Mukakarisa",
+      "relationship": "Legal Counsel",
+      "national_id": "1198080031234567",
+      "phone": "+250788901234",
+      "visit_date": "2025-01-15",
+      "visit_purpose": "Legal counsel — appeal review",
+      "duration_minutes": 90,
+      "officer_on_duty": "Off. Habimana Théogène",
+      "notes": "Appeal documentation reviewed. Attorney confirmed appeal period has lapsed. No security incidents."
+    },
+    {
+      "id": "vis-cr2-003",
+      "visitor_name": "Dr. Emmanuel Uwimana",
+      "relationship": "Prison Medical Officer",
+      "national_id": "N/A - Staff",
+      "phone": "+250785001122",
+      "visit_date": "2026-01-20",
+      "visit_purpose": "Annual medical review",
+      "duration_minutes": 30,
+      "officer_on_duty": "Off. Uwamahoro Diane",
+      "notes": "Blood pressure stable on current medication. No change to prescription. Next review January 2027."
+    }
+  ]'::jsonb
+)
+
+ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================================
