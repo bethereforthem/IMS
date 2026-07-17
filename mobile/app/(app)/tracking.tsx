@@ -61,14 +61,40 @@ export default function TrackingScreen() {
     pulse.setValue(1)
   }, [pulse])
 
-  // Load saved session and offline queue
+  // Load saved session and offline queue.
+  // If no local session exists, query the server to recover a session that was
+  // created while the app was offline or after a commander-initiated reopen.
   useEffect(() => {
     async function init() {
       setLoading(true)
-      const saved = await getTrackingSession()
+      let saved = await getTrackingSession()
+
+      if (!saved) {
+        try {
+          const res = await trackingApi.getMyActiveSession()
+          const srv = res.data?.session
+          if (srv) {
+            const restored: typeof saved = {
+              session_id:      srv.session_id,
+              field_report_id: srv.field_report_id,
+              report_title:    srv.report_title ?? 'Reopened investigation',
+              started_at:      srv.started_at,
+            }
+            await saveTrackingSession(restored)
+            saved = restored
+            // If server says ACTIVE, restart the foreground tracking so pings resume
+            if (srv.status === 'ACTIVE') {
+              await startTracking(srv.session_id)
+            }
+          }
+        } catch {
+          // Server unreachable — continue with no session
+        }
+      }
+
       setSession(saved)
       if (saved) {
-        setSessStatus('ACTIVE') // optimistic; will be confirmed by interval
+        setSessStatus('ACTIVE')
         startPulse()
       }
       const q = await getQueue()
