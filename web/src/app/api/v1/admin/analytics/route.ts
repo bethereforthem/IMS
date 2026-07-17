@@ -22,6 +22,7 @@ export const GET = withAuth(
       { data: usersByRole },
       { data: pageVisits },
       { data: securityByDay },
+      { data: hourlyLogins },
     ] = await Promise.all([
       db.from('user_sessions')
         .select('institution', { count: 'exact', head: false })
@@ -49,6 +50,10 @@ export const GET = withAuth(
       db.from('security_incidents')
         .select('created_at, severity')
         .gte('created_at', last30d),
+      // Hourly login heatmap — last 30 days
+      db.from('login_attempts')
+        .select('attempted_at, success')
+        .gte('attempted_at', last30d),
     ])
 
     if (!loginsByDay) return apiError('Analytics query failed', 500)
@@ -115,6 +120,22 @@ export const GET = withAuth(
     const totalLogins24h = (recentLogins ?? []).filter(r => r.attempted_at >= last24h).length
     const failedLogins24h = (recentLogins ?? []).filter(r => r.attempted_at >= last24h && !r.success).length
 
+    // Hourly heatmap: 24 hours × 7 days-of-week grid (UTC)
+    // Each cell = number of successful logins in that hour-of-day / day-of-week slot
+    const heatmap: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0))
+    for (const r of hourlyLogins ?? []) {
+      if (!r.success) continue
+      const d = new Date(r.attempted_at)
+      const dow  = d.getUTCDay()   // 0=Sun … 6=Sat
+      const hour = d.getUTCHours() // 0-23
+      heatmap[dow][hour]++
+    }
+    // Flatten for the chart: [{ day: 'Sun', hour: 0, value: N }, ...]
+    const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const hourly_heatmap = heatmap.flatMap((row, dow) =>
+      row.map((value, hour) => ({ day: DOW_LABELS[dow], hour, value }))
+    )
+
     return apiSuccess({
       summary: {
         total_active_users: activeSessions?.length ?? 0,
@@ -129,6 +150,7 @@ export const GET = withAuth(
       top_pages,
       daily_incidents,
       sessions_by_institution,
+      hourly_heatmap,
     })
   },
   'admin:analytics'
