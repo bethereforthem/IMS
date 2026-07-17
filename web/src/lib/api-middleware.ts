@@ -95,6 +95,7 @@ export function withAuth(
         clearance: (payload.clearance ?? payload.clearance_level) as string,
         session_id: payload.session_id as string,
         exp: payload.exp as number,
+        has_accepted_policies: payload.has_accepted_policies as boolean | undefined,
       }
 
       // 5. RBAC permission check
@@ -106,8 +107,12 @@ export function withAuth(
       }
 
       // 6. Delegate to the actual route handler
-      const routeCtx = ctx as { params?: Record<string, string> } | undefined
-      return await handler(req, { user, params: routeCtx?.params })
+      // Next.js 15+ passes params as a Promise — await works for both forms
+      const routeCtx = ctx as
+        | { params?: Record<string, string> | Promise<Record<string, string>> }
+        | undefined
+      const params = routeCtx?.params ? await routeCtx.params : undefined
+      return await handler(req, { user, params })
     } catch (err) {
       console.error('[withAuth]', err)
       return apiError('Internal server error', 500)
