@@ -59,6 +59,13 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
 
   if (upsertErr) return apiError('Failed to record acceptance', 500)
 
+  // Mark the user as having completed the policy acceptance flow.
+  // This flag is embedded in the JWT at next login so the gate is skipped entirely.
+  await db
+    .from('users')
+    .update({ has_accepted_policies: true })
+    .eq('id', user.user_id)
+
   await logAudit({
     event_type:  'POLICY_ACCEPTANCE',
     actor:       user,
