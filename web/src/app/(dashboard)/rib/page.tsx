@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { statsApi, casesApi } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
-import { AddCaseModal } from '@/components/shared/AddCaseModal'
+import { AddCaseModal, type CreatedCaseData } from '@/components/shared/AddCaseModal'
 import { AddSuspectModal } from '@/components/shared/AddSuspectModal'
 import { useAuth } from '@/hooks/useAuth'
 import { AnalystDashboard } from './_AnalystDashboard'
@@ -40,6 +41,7 @@ function SkeletonCard() {
 
 function InvestigatorDashboard() {
   const { user } = useAuth()
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [cases, setCases] = useState<Case[]>([])
@@ -105,7 +107,11 @@ function InvestigatorDashboard() {
       {showAddCase && (
         <AddCaseModal
           onClose={() => setShowAddCase(false)}
-          onSuccess={() => { setShowAddCase(false); load() }}
+          onSuccess={(created: CreatedCaseData) => {
+            setShowAddCase(false)
+            load()
+            router.push(`/rib/cases/${created.id}/report`)
+          }}
         />
       )}
       {showAddSuspect && (
@@ -125,7 +131,7 @@ function InvestigatorDashboard() {
           {canWrite && (
             <>
               <button
-                onClick={() => setShowAddCase(true)}
+                onClick={() => router.push('/rib/cases/new')}
                 className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-600 transition"
               >
                 <Plus className="h-3.5 w-3.5" />
