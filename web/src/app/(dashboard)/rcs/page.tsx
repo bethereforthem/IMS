@@ -4,12 +4,14 @@ import { statsApi, correctionsApi } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { AddCorrectionModal } from '@/components/shared/AddCorrectionModal'
+import { InmateDetailModal } from '@/components/shared/InmateDetailModal'
+import { generateCustodyPdf } from '@/lib/custody-pdf'
 import { useAuth } from '@/hooks/useAuth'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
-import { Users, AlertTriangle, FileText, Shield, Building, Calendar, Clock, Plus } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
+import { Users, AlertTriangle, FileText, Shield, Calendar, Clock, Plus, Eye, Download, Loader2, Search } from 'lucide-react'
+import { format } from 'date-fns'
 import clsx from 'clsx'
 import type { DashboardStats } from '@/types'
 
@@ -49,6 +51,10 @@ export default function RCSCustody() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [corrections, setCorrections] = useState<CorrectionRecord[]>([])
   const [showAddInmate, setShowAddInmate] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [inmateSearch, setInmateSearch] = useState('')
+  const [pdfError, setPdfError] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -69,6 +75,10 @@ export default function RCSCustody() {
   ).length
   const sentencedCount = corrections.filter(c =>
     (c.status ?? c.custody_status) === 'SENTENCED'
+  ).length
+  // Historical records (released / transferred / deceased) are not in custody
+  const inCustodyCount = corrections.filter(c =>
+    ['PRE_TRIAL', 'SENTENCED'].includes((c.status ?? c.custody_status) as string)
   ).length
   const upcomingReviews = corrections.filter(c => {
     const reviewDate = new Date(c.next_review ?? c.next_review_date ?? '')
@@ -98,12 +108,50 @@ export default function RCSCustody() {
 
   const canWrite = ['RCS_SUPERINTENDENT', 'RCS_OFFICER'].includes(user?.role ?? '')
 
+  async function handleDownloadPdf(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    setDownloadingId(id)
+    setPdfError(null)
+    try {
+      const r = await correctionsApi.get(id)
+      await generateCustodyPdf(r.data as Record<string, unknown>)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'PDF generation failed'
+      setPdfError(msg)
+      setTimeout(() => setPdfError(null), 5000)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  const filteredCorrections = corrections.filter(c => {
+    const q = inmateSearch.trim().toLowerCase()
+    if (!q) return true
+    return (
+      (c.full_name ?? '').toLowerCase().includes(q) ||
+      (c.ims_reference ?? '').toLowerCase().includes(q)
+    )
+  })
+
   return (
     <div className="space-y-6">
+      {pdfError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-2.5 text-sm text-red-300">
+          <span className="font-medium">PDF Error:</span> {pdfError}
+          <button onClick={() => setPdfError(null)} className="ml-auto text-red-400 hover:text-red-200 text-xs">✕</button>
+        </div>
+      )}
       {showAddInmate && (
         <AddCorrectionModal
           onClose={() => setShowAddInmate(false)}
           onSuccess={() => { setShowAddInmate(false); load() }}
+        />
+      )}
+      {selectedId && (
+        <InmateDetailModal
+          correctionId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onSuccess={load}
         />
       )}
 
@@ -137,7 +185,7 @@ export default function RCSCustody() {
         </div>
       ) : stats ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="In Custody" value={corrections.length} icon={Shield} variant="warn"
+          <StatCard label="In Custody" value={inCustodyCount} icon={Shield} variant="warn"
             sub={`${preTrialCount} pre-trial · ${sentencedCount} sentenced`} />
           <StatCard label="Alerts Today" value={stats.alerts_today} icon={AlertTriangle}
             variant={stats.critical_alerts > 0 ? 'danger' : 'ok'} />
@@ -153,9 +201,18 @@ export default function RCSCustody() {
       {/* Inmates + Alerts */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 rounded-xl border border-rcs/20 bg-slate-900 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-slate-200">Suspects in Custody</h2>
-            <span className="text-xs text-slate-500">{corrections.length} inmates</span>
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold text-slate-200 shrink-0">Suspects in Custody</h2>
+            <div className="relative flex-1 min-w-[160px]">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
+              <input
+                value={inmateSearch}
+                onChange={e => setInmateSearch(e.target.value)}
+                placeholder="Search by name or IMS ref…"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-rcs/50"
+              />
+            </div>
+            <span className="text-xs text-slate-500 shrink-0">{filteredCorrections.length}/{corrections.length}</span>
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => (
@@ -173,13 +230,17 @@ export default function RCSCustody() {
             </div>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
-              {corrections.map(c => {
+              {filteredCorrections.length === 0 && (
+                <p className="text-xs text-slate-500 py-4 text-center">No inmates match &quot;{inmateSearch}&quot;</p>
+              )}
+              {filteredCorrections.map(c => {
                 const threatLevel = c.threat_level ?? 1
                 const custodyStatus = c.status ?? c.custody_status ?? '—'
                 const facilityName = c.facility ?? c.facility_name ?? '—'
+                const isDownloading = downloadingId === c.id
                 return (
                   <div key={c.id}
-                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-4 py-3">
+                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-3 py-2.5 hover:bg-slate-800/70 transition">
                     <Shield className={clsx('h-4 w-4 shrink-0',
                       threatLevel >= 4 ? 'text-red-400' :
                       threatLevel === 3 ? 'text-amber-400' : 'text-green-400')} />
@@ -195,7 +256,26 @@ export default function RCSCustody() {
                         )}
                       </div>
                     </div>
-                    <div className="text-right shrink-0 space-y-1">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => setSelectedId(c.id)}
+                        title="View full custody record"
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition text-[10px] font-medium"
+                      >
+                        <Eye className="h-3 w-3" />
+                        View
+                      </button>
+                      <button
+                        onClick={e => handleDownloadPdf(e, c.id)}
+                        disabled={isDownloading}
+                        title="Download PDF"
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-amber-900/50 hover:bg-amber-800 text-amber-300 hover:text-white transition text-[10px] font-medium disabled:opacity-50"
+                      >
+                        {isDownloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        PDF
+                      </button>
+                    </div>
+                    <div className="text-right shrink-0 space-y-1 hidden sm:block">
                       <span className={clsx(
                         'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded block text-center',
                         custodyStatus === 'PRE_TRIAL' ? 'text-blue-400 bg-blue-950' : 'text-purple-400 bg-purple-950'
