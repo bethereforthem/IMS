@@ -1,9 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { StatCard } from '@/components/shared/StatCard'
+import { InmateDetailModal } from '@/components/shared/InmateDetailModal'
 import { correctionsApi } from '@/lib/api'
-import { formatDistanceToNow, format, differenceInDays } from 'date-fns'
-import { Shield, Users, Clock, AlertTriangle } from 'lucide-react'
+import { generateCustodyPdf } from '@/lib/custody-pdf'
+import { format, differenceInDays } from 'date-fns'
+import { Shield, Users, Clock, AlertTriangle, Download, Loader2 } from 'lucide-react'
 import clsx from 'clsx'
 
 type FacilityFilter = 'ALL' | 'Mageragere' | 'Nyarugenge'
@@ -26,6 +28,25 @@ export default function InmatesPage() {
   const [status, setStatus] = useState<StatusFilter>('ALL')
   const [threat, setThreat] = useState<ThreatFilter>('ALL')
   const [corrections, setCorrections] = useState<Record<string, unknown>[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+
+  async function handleDownloadPdf(e: React.MouseEvent, id: string) {
+    e.stopPropagation()
+    setDownloadingId(id)
+    setPdfError(null)
+    try {
+      const r = await correctionsApi.get(id)
+      await generateCustodyPdf(r.data as Record<string, unknown>)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'PDF generation failed'
+      setPdfError(msg)
+      setTimeout(() => setPdfError(null), 5000)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   useEffect(() => {
     correctionsApi.list({ limit: 100 }).then(r => {
@@ -50,8 +71,28 @@ export default function InmatesPage() {
   const sentencedCount = corrections.filter((r: Record<string, unknown>) => r.status === 'SENTENCED').length
   const highThreatCount = corrections.filter((r: Record<string, unknown>) => (r.threat_level as number) >= 4).length
 
+  function reload() {
+    correctionsApi.list({ limit: 100 }).then(r => {
+      if (r.data?.records?.length) setCorrections(r.data.records)
+    }).catch(() => {})
+  }
+
   return (
     <div className="space-y-6">
+      {pdfError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-2.5 text-sm text-red-300">
+          <span className="font-medium">PDF Error:</span> {pdfError}
+          <button onClick={() => setPdfError(null)} className="ml-auto text-red-400 hover:text-red-200 text-xs">✕</button>
+        </div>
+      )}
+      {selectedId && (
+        <InmateDetailModal
+          correctionId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onSuccess={reload}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -155,13 +196,14 @@ export default function InmatesPage() {
           return (
             <div
               key={r.id as string}
+              onClick={() => setSelectedId(r.id as string)}
               className={clsx(
-                'rounded-xl border p-5 transition-colors',
+                'rounded-xl border p-5 transition-colors cursor-pointer',
                 threatLevel >= 4
-                  ? 'border-red-900/40 bg-red-950/10 hover:bg-red-950/15'
+                  ? 'border-red-900/40 bg-red-950/10 hover:bg-red-950/20'
                   : threatLevel === 3
-                  ? 'border-amber-900/30 bg-amber-950/5 hover:bg-amber-950/10'
-                  : 'border-slate-800 bg-slate-900 hover:bg-slate-800/50'
+                  ? 'border-amber-900/30 bg-amber-950/5 hover:bg-amber-950/15'
+                  : 'border-slate-800 bg-slate-900 hover:bg-slate-800/70'
               )}
             >
               <div className="flex flex-col sm:flex-row gap-4">
@@ -207,13 +249,14 @@ export default function InmatesPage() {
                       Cell {r.cell_block as string}
                     </span>
                   </div>
-                  {r.status === 'SENTENCED' && r.sentence_years && (
+                  {r.status === 'SENTENCED' && !!r.sentence_years && (
                     <p className="text-xs text-slate-400">
                       <span className="text-slate-500">Sentence:</span>{' '}
                       <span className="text-white font-medium">{r.sentence_years as number} years</span>
                       <span className="text-slate-500"> · eligible for review</span>
                     </p>
                   )}
+                  <p className="text-[10px] text-slate-600 mt-1">Click to view full record</p>
                 </div>
 
                 {/* Right — Dates */}
@@ -236,6 +279,18 @@ export default function InmatesPage() {
                       {reviewDays !== null ? `in ${reviewDays} days${reviewSoon ? ' ⚠' : ''}` : 'No review scheduled'}
                     </p>
                   </div>
+
+                  <button
+                    onClick={e => handleDownloadPdf(e, r.id as string)}
+                    disabled={downloadingId === (r.id as string)}
+                    className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 rounded-lg bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 hover:text-white transition text-[10px] font-medium disabled:opacity-50 w-full justify-center"
+                  >
+                    {downloadingId === (r.id as string)
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <Download className="h-3 w-3" />
+                    }
+                    Download PDF
+                  </button>
                 </div>
               </div>
             </div>
