@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { fieldReportsApi, agentTrackingApi, type WebFieldReport, type ActiveAgent } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   RefreshCw, X, Shield, AlertTriangle, CheckCircle,
@@ -371,10 +372,16 @@ export default function RDFIncidentsPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-refresh every 20 s
+  // Supabase Realtime — instant updates on new/changed reports and GPS pings,
+  // matching the NISS incidents pattern exactly.
   useEffect(() => {
-    const id = setInterval(() => load(true), 20_000)
-    return () => clearInterval(id)
+    const ch = supabase
+      .channel('rdf-incidents-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'field_reports' }, () => load(true))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'field_reports' }, () => load(true))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_location_pings' }, () => load(true))
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
   }, [load])
 
   const displayed = reports.filter(r => {
