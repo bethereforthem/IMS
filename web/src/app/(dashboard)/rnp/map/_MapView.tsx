@@ -6,6 +6,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import type { CameraNode, IntelligenceEvent } from '@/types'
 import { alarmManager, type MapSoundType } from '@/lib/mapSounds'
 import { alertSignalIconHtml, alertSignalPopupHtml, alertEventSoundType, alertEventSeverity } from '@/lib/mapAlertUtils'
+import { attachMapNavigation, type MapNavHandle } from '@/lib/mapNav'
 
 const THREAT_COLOR = (level?: number) =>
   !level ? '#94a3b8' : level >= 8 ? '#ef4444' : level >= 5 ? '#f97316' : '#fbbf24'
@@ -43,6 +44,7 @@ export default function MapView({
   const eventLayerRef   = useRef<LayerGroup | null>(null)
   const villageLayerRef = useRef<LayerGroup | null>(null)
   const alertLayerRef   = useRef<LayerGroup | null>(null)
+  const navRef          = useRef<MapNavHandle | null>(null)
 
   // Alarm tracking
   const registeredRef = useRef<Set<string>>(new Set())
@@ -152,17 +154,18 @@ export default function MapView({
       const map = L.map(divRef.current, { center: [-1.9403, 29.8739], zoom: 11, zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 100 })
       mapRef.current = map
 
-      const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 })
+      // Satellite imagery with roads, landmarks and place names is the default view
+      const hybridLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 })
       const baseLayers: Record<string, L.TileLayer> = {
-        '🌑 Dark (Tactical)':    darkLayer,
+        '🛰️ Satellite + Labels': hybridLayer,
         '🛰️ Satellite':          L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
-        '🛰️ Satellite + Labels': L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
+        '🌑 Dark (Tactical)':    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
         '🗺️ Streets (English)':  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
         '🗺️ Streets (OSM)':      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }),
         '☀️ Light':              L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
         '⛰️ Terrain':           L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenTopoMap', maxZoom: 17 }),
       }
-      darkLayer.addTo(map)
+      hybridLayer.addTo(map)
 
       const cameraLayer  = L.layerGroup(); if (showCameras) cameraLayer.addTo(map)
       const eventLayer   = L.layerGroup(); if (showEvents)  eventLayer.addTo(map)
@@ -182,10 +185,15 @@ export default function MapView({
       }, { position: 'topright', collapsed: false }).addTo(map)
 
       L.control.scale({ position: 'bottomleft', metric: true, imperial: false }).addTo(map)
+
+      // Search + driving directions (multi-waypoint routing, distance, ETA)
+      navRef.current = attachMapNavigation(L, map)
+
       setMapReady(true)
     })
 
     return () => {
+      navRef.current?.destroy(); navRef.current = null
       if (mapRef.current) { (mapRef.current as { remove: () => void }).remove(); mapRef.current = null }
       cameraLayerRef.current = null; eventLayerRef.current = null
       villageLayerRef.current = null; alertLayerRef.current = null
