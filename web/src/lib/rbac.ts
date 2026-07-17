@@ -9,6 +9,7 @@ export interface AuthPayload {
   clearance: string
   session_id: string
   exp: number
+  has_accepted_policies?: boolean
 }
 
 // ---------------------------------------------------------------------------
