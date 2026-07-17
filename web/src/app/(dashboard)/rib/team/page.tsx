@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { teamApi, type TeamMember } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -12,32 +13,23 @@ import { Users, Shield, Briefcase, Activity } from 'lucide-react'
 type MemberStatus = 'ON_DUTY' | 'OFF_DUTY'
 type StatusFilter = MemberStatus | 'ALL'
 
-interface TeamMember {
-  id: string
-  badge: string
-  name: string
-  role: 'RIB_INVESTIGATOR' | 'RIB_ANALYST'
-  specialisation: string
-  active_cases: number
-  clearance: string
-  status: MemberStatus
-  last_active: string
-}
+// A member is considered on duty if they logged in within the last 24 hours
+const ON_DUTY_WINDOW_MS = 24 * 60 * 60 * 1000
 
-const TEAM: TeamMember[] = [
-  { id:'t1', badge:'RIB-INV-001', name:'Pascal Habimana',       role:'RIB_INVESTIGATOR', specialisation:'Financial Crime',      active_cases:3, clearance:'SECRET', status:'ON_DUTY',  last_active:'2026-06-29T11:30:00Z' },
-  { id:'t2', badge:'RIB-INV-002', name:'Rose Kayitesi',         role:'RIB_INVESTIGATOR', specialisation:'Human Trafficking',    active_cases:2, clearance:'SECRET', status:'ON_DUTY',  last_active:'2026-06-29T10:00:00Z' },
-  { id:'t3', badge:'RIB-INV-003', name:'Sylvain Ndayisaba',     role:'RIB_INVESTIGATOR', specialisation:'Cybercrime',           active_cases:1, clearance:'SECRET', status:'OFF_DUTY', last_active:'2026-06-28T17:00:00Z' },
-  { id:'t4', badge:'RIB-ANA-004', name:'Martine Uwiringiyimana',role:'RIB_ANALYST',      specialisation:'Intelligence Analysis',active_cases:0, clearance:'SECRET', status:'ON_DUTY',  last_active:'2026-06-29T13:00:00Z' },
-  { id:'t5', badge:'RIB-ANA-005', name:'Christian Niyonsenga',  role:'RIB_ANALYST',      specialisation:'OSINT & Data Mining',  active_cases:0, clearance:'SECRET', status:'ON_DUTY',  last_active:'2026-06-29T12:45:00Z' },
-]
+function dutyStatus(m: TeamMember): MemberStatus {
+  if (!m.last_login_at) return 'OFF_DUTY'
+  return Date.now() - new Date(m.last_login_at).getTime() < ON_DUTY_WINDOW_MS
+    ? 'ON_DUTY'
+    : 'OFF_DUTY'
+}
 
 function initials(name: string) {
   return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 }
 
 function shortFirstName(name: string) {
-  return name.split(' ')[0]
+  const parts = name.split(' ')
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0]
 }
 
 const STATUS_FILTERS: StatusFilter[] = ['ALL', 'ON_DUTY', 'OFF_DUTY']
@@ -53,32 +45,36 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 function MemberCard({ m }: { m: TeamMember }) {
+  const status = dutyStatus(m)
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 flex gap-4 hover:border-rib/20 transition-colors">
       {/* Avatar */}
       <div className="shrink-0 h-11 w-11 rounded-full bg-rib/20 text-rib flex items-center justify-center font-bold text-sm">
-        {initials(m.name)}
+        {initials(m.full_name)}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0 space-y-2">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-slate-100 truncate">{m.name}</p>
+            <p className="text-sm font-bold text-slate-100 truncate">{m.full_name}</p>
             <div className={clsx(
               'h-2 w-2 rounded-full shrink-0',
-              m.status === 'ON_DUTY' ? 'bg-green-500' : 'bg-slate-600'
-            )} title={m.status.replace('_', ' ')} />
+              status === 'ON_DUTY' ? 'bg-green-500' : 'bg-slate-600'
+            )} title={status.replace('_', ' ')} />
           </div>
-          <p className="text-[11px] text-slate-500 font-mono">{m.badge}</p>
+          <p className="text-[11px] text-slate-500 font-mono">{m.badge_number}</p>
         </div>
 
         <div className="flex flex-wrap gap-1.5 items-center">
-          <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', ROLE_BADGE[m.role])}>
-            {ROLE_LABEL[m.role]}
+          <span className={clsx(
+            'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded',
+            ROLE_BADGE[m.role] ?? 'text-slate-400 bg-slate-800 border border-slate-700'
+          )}>
+            {ROLE_LABEL[m.role] ?? m.role.replace(/_/g, ' ')}
           </span>
           <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
-            {m.specialisation}
+            {m.institution} Intel Unit
           </span>
         </div>
 
@@ -93,38 +89,54 @@ function MemberCard({ m }: { m: TeamMember }) {
             </span>
           </span>
           <span className="text-slate-600">·</span>
-          <span>Clearance: <span className="text-amber-400 font-semibold">{m.clearance}</span></span>
+          <span>Clearance: <span className="text-amber-400 font-semibold">{m.clearance_level}</span></span>
         </div>
 
         <div className="flex items-center justify-between text-[10px] text-slate-600">
           <span className={clsx(
             'font-semibold',
-            m.status === 'ON_DUTY' ? 'text-green-500' : 'text-slate-500'
+            status === 'ON_DUTY' ? 'text-green-500' : 'text-slate-500'
           )}>
-            {m.status.replace('_', ' ')}
+            {status.replace('_', ' ')}
           </span>
-          <span>Last active {formatDistanceToNow(new Date(m.last_active), { addSuffix: true })}</span>
+          <span>
+            {m.last_login_at
+              ? `Last active ${formatDistanceToNow(new Date(m.last_login_at), { addSuffix: true })}`
+              : 'Never logged in'}
+          </span>
         </div>
       </div>
     </div>
   )
 }
 
-const chartData = TEAM.map(m => ({
-  name: shortFirstName(m.name),
-  cases: m.active_cases,
-}))
-
 export default function RIBTeamPage() {
   const { user } = useAuth()
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [team, setTeam] = useState<TeamMember[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const filtered = TEAM.filter(m => statusFilter === 'ALL' || m.status === statusFilter)
+  const load = useCallback(() => {
+    setLoading(true)
+    teamApi.list()
+      .then(r => setTeam(r.data?.members ?? []))
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
 
-  const totalOfficers      = TEAM.length
-  const onDutyCount        = TEAM.filter(m => m.status === 'ON_DUTY').length
-  const activeInvestigators = TEAM.filter(m => m.role === 'RIB_INVESTIGATOR' && m.status === 'ON_DUTY').length
-  const totalActiveCases   = TEAM.reduce((sum, m) => sum + m.active_cases, 0)
+  useEffect(() => { load() }, [load])
+
+  const filtered = team.filter(m => statusFilter === 'ALL' || dutyStatus(m) === statusFilter)
+
+  const totalOfficers       = team.length
+  const onDutyCount         = team.filter(m => dutyStatus(m) === 'ON_DUTY').length
+  const activeInvestigators = team.filter(m => m.role === 'RIB_INVESTIGATOR' && dutyStatus(m) === 'ON_DUTY').length
+  const totalActiveCases    = team.reduce((sum, m) => sum + m.active_cases, 0)
+
+  const chartData = team.map(m => ({
+    name: shortFirstName(m.full_name),
+    cases: m.active_cases,
+  }))
 
   return (
     <div className="space-y-6">
@@ -143,7 +155,7 @@ export default function RIBTeamPage() {
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total Officers" value={totalOfficers} icon={Users} sub="Intelligence unit" />
-        <StatCard label="On Duty" value={onDutyCount} icon={Shield} sub="Currently active" />
+        <StatCard label="On Duty" value={onDutyCount} icon={Shield} sub="Active in last 24h" />
         <StatCard label="Active Investigators" value={activeInvestigators} icon={Briefcase} sub="On-duty investigators" />
         <StatCard label="Active Cases" value={totalActiveCases} icon={Activity} variant="warn" sub="Across all officers" />
       </div>
@@ -170,32 +182,44 @@ export default function RIBTeamPage() {
       </div>
 
       {/* Member grid */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {filtered.map(m => <MemberCard key={m.id} m={m} />)}
-        {filtered.length === 0 && (
-          <div className="sm:col-span-2 rounded-xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-500 text-sm">
-            <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            No team members match the selected filter.
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-36 animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {filtered.map(m => <MemberCard key={m.id} m={m} />)}
+          {filtered.length === 0 && (
+            <div className="sm:col-span-2 rounded-xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-500 text-sm">
+              <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              No team members match the selected filter.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Workload chart */}
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
         <h2 className="mb-4 text-sm font-semibold text-slate-200">Team Workload — Active Cases</h2>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
-            <Tooltip
-              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-              labelStyle={{ color: '#e2e8f0' }}
-              cursor={{ fill: 'rgba(15,118,110,0.08)' }}
-            />
-            <Bar dataKey="cases" fill="#0F766E" radius={[4, 4, 0, 0]} name="Active Cases" />
-          </BarChart>
-        </ResponsiveContainer>
+        {team.length === 0 ? (
+          <p className="text-sm text-slate-500 py-8 text-center">No team data available</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                labelStyle={{ color: '#e2e8f0' }}
+                cursor={{ fill: 'rgba(15,118,110,0.08)' }}
+              />
+              <Bar dataKey="cases" fill="#0F766E" radius={[4, 4, 0, 0]} name="Active Cases" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   )
