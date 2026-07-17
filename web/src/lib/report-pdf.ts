@@ -279,16 +279,20 @@ function personBlock(p: PersonEntry, idx: number, role: string): Obj {
   return {
     stack: [
       cardHeader,
-      // 4-column field grid
+      // 4-column field grid — identity fields emphasised in bold
       {
         table: {
           widths: ['20%', '30%', '20%', '30%'],
-          body: fieldPairs.map(([l1, v1, l2, v2]) => [
-            { text: l1,       fontSize: 7.5, bold: true, color: LBL_CLR },
-            { text: v1 || ' ', fontSize: 9,  color: '#000000' },
-            { text: l2,       fontSize: 7.5, bold: true, color: LBL_CLR },
-            { text: v2 || ' ', fontSize: 9,  color: '#000000' },
-          ]),
+          body: fieldPairs.map(([l1, v1, l2, v2]) => {
+            const boldValue = (label: string) =>
+              ['Full Name', 'National ID / PP', 'Party Status'].includes(label)
+            return [
+              { text: l1,       fontSize: 7.5, bold: true, color: LBL_CLR },
+              { text: v1 || ' ', fontSize: 9,  bold: boldValue(l1), color: '#000000' },
+              { text: l2,       fontSize: 7.5, bold: true, color: LBL_CLR },
+              { text: v2 || ' ', fontSize: 9,  bold: boldValue(l2), color: '#000000' },
+            ]
+          }),
         },
         layout: {
           hLineWidth: () => 0.5,
@@ -321,9 +325,8 @@ function emptyPerson(): PersonEntry {
 // ─── Main export ───────────────────────────────────────────────────────────────
 
 export async function generateInvestigationPdf(opts: GeneratePdfOptions): Promise<void> {
-  const pdfMake  = (await import('pdfmake/build/pdfmake')).default
-  const vfsFonts = (await import('pdfmake/build/vfs_fonts')).default
-  pdfMake.vfs = vfsFonts as unknown as Record<string, string>
+  const { getPdfMake } = await import('./pdf-fonts')
+  const { pdfMake, font: documentFont } = await getPdfMake()
 
   const { caseInfo, report, investigator, signatureDataUrl } = opts
   const {
@@ -341,6 +344,14 @@ export async function generateInvestigationPdf(opts: GeneratePdfOptions): Promis
     now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
     + '  '
     + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+
+  // Contact details for the certification block: match the signing officer to
+  // their entry in the investigators section (fall back to the lead entry)
+  const leadInvestigatorEntry =
+    investigators.find(i =>
+      i.name && investigator.full_name &&
+      (i.name.includes(investigator.full_name) || investigator.full_name.includes(i.name))
+    ) ?? investigators[0]
 
   const safeStr = (v: string | undefined | null) =>
     (v ?? '').replace(/_/g, ' ').trim() || ''
@@ -606,7 +617,8 @@ export async function generateInvestigationPdf(opts: GeneratePdfOptions): Promis
                 ['Rank / Role',  safeStr(investigator.role)],
                 ['Badge Number', investigator.badge_number || ''],
                 ['Institution',  investigator.institution || ''],
-                ['Telephone',    ''],
+                ['Telephone',    leadInvestigatorEntry?.telephone || ''],
+                ['Email',        leadInvestigatorEntry?.email || ''],
                 ['Date Signed',  reportDate],
               ]),
             ],
@@ -701,18 +713,13 @@ export async function generateInvestigationPdf(opts: GeneratePdfOptions): Promis
     content,
 
     defaultStyle: {
-      font: 'Roboto',
+      font: documentFont,
       fontSize: 10,
       lineHeight: 1.3,
       color: '#000000',
     },
   }
 
-  return new Promise<void>((resolve, reject) => {
-    try {
-      pdfMake.createPdf(docDef).download(safeFilename, () => resolve())
-    } catch (err) {
-      reject(err)
-    }
-  })
+  // pdfmake 0.3: download() is promise-based
+  await pdfMake.createPdf(docDef).download(safeFilename)
 }
