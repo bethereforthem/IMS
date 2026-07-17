@@ -40,7 +40,12 @@ export const GET = withAuth(async (req: NextRequest, { user, params }) => {
       })
     )
 
-    return apiSuccess({ ...caseRecord, suspects, case_suspects: undefined })
+    return apiSuccess({
+      ...caseRecord,
+      classification: caseRecord.clearance_level,
+      suspects,
+      case_suspects: undefined,
+    })
   } catch (err) {
     console.error('[GET /api/v1/cases/[id]]', err)
     return apiError('Internal server error', 500)
