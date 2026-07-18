@@ -49,8 +49,8 @@ function toAlpha3(nationality?: string): string | null {
 }
 
 function maskId(raw: string): string {
-  const tail = raw.slice(-4)
-  return `••••${tail}`
+  const digits = raw.replace(/\D/g, '')
+  return `••••${digits.slice(-4)}`
 }
 
 export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayload; params?: Record<string, string> }) => {
