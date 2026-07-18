@@ -132,13 +132,14 @@ export const patrolApi = {
 
   submitReport: (data: {
     person_name?: string
+    person?: Record<string, string>
     description: string
     insecurity_type: string
     location_lat?: number | null
     location_lng?: number | null
     location_description?: string
     file_urls?: string[]
-  }) => api.post<Record<string, unknown>>('/patrol/report', data),
+  }) => api.post<{ suspect_id?: string | null; matched_existing_record?: boolean } & Record<string, unknown>>('/patrol/report', data),
 }
 
 // ─── Location (TOP SECRET — role-gated by RLS on server) ─────────────────────
