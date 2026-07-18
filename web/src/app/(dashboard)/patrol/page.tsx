@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { statsApi } from '@/lib/api'
+import { patrolApi } from '@/lib/api'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { useAuth } from '@/hooks/useAuth'
@@ -8,6 +8,18 @@ import { AlertTriangle, Search, Shield, FileText, Info, MapPin, CheckCircle, XCi
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import type { IntelligenceEvent } from '@/types'
+
+// Community report notes are stored as JSON — render them human-readable
+function summarizeNotes(notes?: string): string {
+  if (!notes) return ''
+  try {
+    const p = JSON.parse(notes) as { person_name?: string; insecurity_type?: string; description?: string }
+    const type = p.insecurity_type ? String(p.insecurity_type).replace(/_/g, ' ') : ''
+    return [p.person_name, type, p.description].filter(Boolean).join(' — ')
+  } catch {
+    return notes
+  }
+}
 
 const QUICK_ACTIONS = [
   {
@@ -48,11 +60,10 @@ export default function PatrolDashboard() {
   const load = useCallback(() => {
     if (!user?.id) return
     setLoading(true)
-    statsApi.getRecentEvents(50).then(r => {
-      const filtered = (r.data ?? []).filter(
-        (e: IntelligenceEvent) => e.reporting_officer_id === user.id
-      )
-      setMyEvents(filtered)
+    // VILLAGE_LEADER cannot read the global events feed (source_attribution:read)
+    // — GET /patrol/report returns only the caller's own events
+    patrolApi.myReports(50).then(r => {
+      setMyEvents(r.data?.events ?? [])
     }).catch(console.error)
       .finally(() => setLoading(false))
   }, [user?.id])
@@ -191,7 +202,7 @@ export default function PatrolDashboard() {
                       </div>
                     )}
                     {ev.notes && (
-                      <p className="text-slate-500 text-[10px] mt-0.5 truncate">{ev.notes}</p>
+                      <p className="text-slate-500 text-[10px] mt-0.5 truncate">{summarizeNotes(ev.notes)}</p>
                     )}
                   </div>
                   <span className="text-slate-500 shrink-0 whitespace-nowrap">
