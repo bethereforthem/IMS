@@ -4,10 +4,22 @@ import { patrolApi } from '@/lib/api'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { useAuth } from '@/hooks/useAuth'
-import { AlertTriangle, Search, Shield, FileText, Info, MapPin, CheckCircle, XCircle, Activity, Users } from 'lucide-react'
+import { AlertTriangle, Search, Shield, FileText, Info, MapPin, CheckCircle, XCircle, Activity, Users, Loader2, UserCheck } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import type { IntelligenceEvent } from '@/types'
+
+// Guidance per record status — worst status wins when several records match
+const SCREEN_GUIDANCE: Record<string, { label: string; advice: string; critical: boolean }> = {
+  WANTED:           { label: 'WANTED',            advice: 'Do NOT confront this person. RNP has been alerted and will respond.', critical: true },
+  INTERPOL_FLAGGED: { label: 'INTERPOL FLAGGED',  advice: 'Do NOT confront this person. RNP has been alerted and will respond.', critical: true },
+  ARRESTED:         { label: 'ARRESTED',          advice: 'Record indicates this person should be in police custody. Verify carefully — security organs have been notified of this check.', critical: true },
+  IN_CUSTODY:       { label: 'IN CUSTODY',        advice: 'Record indicates this person should be in custody. Verify carefully — security organs have been notified of this check.', critical: true },
+  ACTIVE:           { label: 'UNDER INVESTIGATION', advice: 'This person is known to security organs. Remain vigilant and report any suspicious behaviour.', critical: false },
+  CONVICTED:        { label: 'PAST CONVICTION',   advice: 'This person has a past criminal record on file. Exercise appropriate vigilance.', critical: false },
+  RELEASED:         { label: 'PREVIOUSLY IMPRISONED', advice: 'This person served a sentence and was released. Exercise appropriate vigilance.', critical: false },
+}
+const SCREEN_ORDER = ['WANTED', 'INTERPOL_FLAGGED', 'ARRESTED', 'IN_CUSTODY', 'ACTIVE', 'CONVICTED', 'RELEASED']
 
 // Community report notes are stored as JSON — render them human-readable
 function summarizeNotes(notes?: string): string {
@@ -52,10 +64,52 @@ const QUICK_ACTIONS = [
   },
 ]
 
+type ScreenResult =
+  | { state: 'clean' }
+  | { state: 'found'; matches: { status: string; threat_level: number | null }[] }
+  | { state: 'error'; message: string }
+
 export default function PatrolDashboard() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [myEvents, setMyEvents] = useState<IntelligenceEvent[]>([])
+
+  const [screenQuery, setScreenQuery]     = useState('')
+  const [screening, setScreening]         = useState(false)
+  const [screenResult, setScreenResult]   = useState<ScreenResult | null>(null)
+  const [coords, setCoords]               = useState<{ lat: number; lng: number } | null>(null)
+
+  useEffect(() => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      pos => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { timeout: 10000, maximumAge: 60000 }
+    )
+  }, [])
+
+  async function handleScreen(e: React.FormEvent) {
+    e.preventDefault()
+    const q = screenQuery.trim()
+    if (q.length < 3) {
+      setScreenResult({ state: 'error', message: 'Enter the person’s full name or ID number (at least 3 characters).' })
+      return
+    }
+    setScreening(true)
+    setScreenResult(null)
+    try {
+      const r = await patrolApi.screen(q, coords ?? undefined)
+      if (r.data?.found) {
+        setScreenResult({ state: 'found', matches: r.data.matches ?? [] })
+      } else {
+        setScreenResult({ state: 'clean' })
+      }
+    } catch {
+      setScreenResult({ state: 'error', message: 'Screening failed. Check your connection and try again.' })
+    } finally {
+      setScreening(false)
+    }
+  }
 
   const load = useCallback(() => {
     if (!user?.id) return
@@ -104,6 +158,102 @@ export default function PatrolDashboard() {
             classified data are accessible at your clearance level.
           </p>
         </div>
+      </div>
+
+      {/* Community screening */}
+      <div className="rounded-xl border border-teal-900/50 bg-teal-950/10 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <UserCheck className="h-4 w-4 text-teal-400" />
+          <h2 className="text-sm font-semibold text-white">Community Screening</h2>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          When someone new arrives in your village, check their full name or National ID / passport
+          number before welcoming them. You will only see whether they are clean or have a record —
+          no personal details.
+        </p>
+
+        <form onSubmit={handleScreen} className="flex gap-2 max-w-xl">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              value={screenQuery}
+              onChange={e => { setScreenQuery(e.target.value); setScreenResult(null) }}
+              placeholder="Full name  or  National ID / passport number"
+              className="w-full bg-slate-800 border border-slate-700 focus:border-teal-500/50 rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 outline-none transition-colors"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={screening}
+            className="px-4 py-2.5 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 shrink-0"
+          >
+            {screening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            Check
+          </button>
+        </form>
+
+        {screenResult?.state === 'error' && (
+          <div className="mt-3 max-w-xl rounded-lg border border-red-800/40 bg-red-950/10 px-3 py-2 text-xs text-red-400">
+            {screenResult.message}
+          </div>
+        )}
+
+        {screenResult?.state === 'clean' && (
+          <div className="mt-3 max-w-xl rounded-lg border border-green-800/40 bg-green-950/10 px-4 py-3 flex items-start gap-3">
+            <CheckCircle className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-green-400">CLEAN — No Criminal Record Found</p>
+              <p className="text-xs text-green-300/60 mt-1">
+                No record matches this name or ID in the national system. Verification data is
+                discarded in line with Law No. 058/2021.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {screenResult?.state === 'found' && (() => {
+          const worst = SCREEN_ORDER.find(s => screenResult.matches.some(m => m.status === s))
+            ?? screenResult.matches[0]?.status
+          const g = SCREEN_GUIDANCE[worst ?? ''] ?? {
+            label: String(worst ?? 'RECORD').replace(/_/g, ' '), advice: 'A record exists in the national system.', critical: false,
+          }
+          const threat = Math.max(0, ...screenResult.matches.map(m => m.threat_level ?? 0))
+          return (
+            <div className={clsx(
+              'mt-3 max-w-xl rounded-lg border px-4 py-3 flex items-start gap-3',
+              g.critical ? 'border-red-800/50 bg-red-950/20' : 'border-amber-800/40 bg-amber-950/10'
+            )}>
+              <XCircle className={clsx('h-5 w-5 shrink-0 mt-0.5', g.critical ? 'text-red-400' : 'text-amber-400')} />
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={clsx('text-sm font-bold', g.critical ? 'text-red-400' : 'text-amber-400')}>
+                    RECORD FOUND — {g.label}
+                  </p>
+                  {threat > 0 && (
+                    <span className="flex items-center gap-1">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <span key={i} className={clsx('h-1.5 w-1.5 rounded-full inline-block',
+                          i < threat ? 'bg-red-500' : 'bg-slate-700')} />
+                      ))}
+                    </span>
+                  )}
+                  {screenResult.matches.length > 1 && (
+                    <span className="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
+                      {screenResult.matches.length} matching records
+                    </span>
+                  )}
+                </div>
+                <p className={clsx('text-xs mt-1', g.critical ? 'text-red-300/70' : 'text-amber-300/70')}>
+                  {g.advice}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1.5">
+                  Details are restricted to authorised institutions. This check has been logged and
+                  security organs can see where it was performed.
+                </p>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Stats */}
