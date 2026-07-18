@@ -77,9 +77,48 @@ export const GET = withAuth(async (req: NextRequest, { user, params }) => {
       }))
       .filter((c: Record<string, unknown>) => c.id)
 
+    // Community (village leader) reports linked to this person — part of the
+    // cross-institution 360° view. Notes hold JSON incl. the civil profile.
+    const { data: reportEvents } = await supabase
+      .from('intelligence_events')
+      .select('id, officer_id, institution, location_description, location_lat, location_lng, notes, event_timestamp')
+      .eq('suspect_id', id)
+      .eq('source_tag', 'OFFICER_REPORT')
+      .order('event_timestamp', { ascending: false })
+      .limit(50)
+
+    const reporterIds = [...new Set((reportEvents ?? []).map(e => e.officer_id).filter(Boolean))]
+    let reporters: Record<string, { full_name: string; badge_number: string }> = {}
+    if (reporterIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, full_name, badge_number')
+        .in('id', reporterIds)
+      reporters = Object.fromEntries((users ?? []).map(u => [u.id, { full_name: u.full_name, badge_number: u.badge_number }]))
+    }
+
+    const community_reports = (reportEvents ?? []).map(e => {
+      let parsed: Record<string, unknown> = {}
+      try { parsed = JSON.parse(e.notes ?? '{}') } catch { parsed = { description: e.notes } }
+      return {
+        id: e.id,
+        insecurity_type: parsed.insecurity_type ?? null,
+        description: parsed.description ?? null,
+        person_profile: parsed.person_profile ?? null,
+        file_urls: Array.isArray(parsed.file_urls) ? parsed.file_urls : [],
+        location_description: e.location_description,
+        location_lat: e.location_lat,
+        location_lng: e.location_lng,
+        reported_at: e.event_timestamp,
+        reporter: e.officer_id ? reporters[e.officer_id] ?? null : null,
+        institution: e.institution,
+      }
+    })
+
     return apiSuccess({
       ...suspect,
       linked_cases,
+      community_reports,
       case_suspects: undefined,
     })
   } catch (err) {
