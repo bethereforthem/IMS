@@ -5,7 +5,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import {
   User, X, AlertTriangle, Loader2, Shield, FileText, Lock,
-  Briefcase, Building2, Fingerprint,
+  Briefcase, Building2, Fingerprint, Megaphone, MapPin,
 } from 'lucide-react'
 
 interface LinkedCase {
@@ -40,6 +40,41 @@ interface CustodyRow {
   next_review?: string
 }
 
+interface CommunityProfile {
+  full_name?: string
+  party_status?: string
+  father_name?: string
+  mother_name?: string
+  date_of_birth?: string
+  sex?: string
+  place_of_birth?: string
+  residential_address?: string
+  domicile_address?: string
+  telephone?: string
+  email?: string
+  national_id_or_passport?: string
+  nationality?: string
+  marital_status?: string
+  profession?: string
+  properties?: string
+  health_status?: string
+  education_level?: string
+  number_of_children?: string
+  alternative_contact?: string
+}
+
+interface CommunityReport {
+  id: string
+  insecurity_type?: string | null
+  description?: string | null
+  person_profile?: CommunityProfile | null
+  file_urls?: string[]
+  location_description?: string | null
+  reported_at?: string
+  reporter?: { full_name: string; badge_number: string } | null
+  institution?: string
+}
+
 interface SuspectDetail {
   id: string
   ims_reference?: string
@@ -67,6 +102,7 @@ interface SuspectDetail {
   linked_cases?: LinkedCase[]
   warrants?: WarrantRow[]
   corrections_records?: CustodyRow[]
+  community_reports?: CommunityReport[]
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -142,6 +178,10 @@ export function SuspectDetailModal({
     : null
 
   const activeWarrants = (detail?.warrants ?? []).filter(w => w.active)
+
+  const communityReports = detail?.community_reports ?? []
+  // Most recent report carrying a civil profile from a village leader
+  const communityProfile = communityReports.find(r => r.person_profile)?.person_profile
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -270,6 +310,39 @@ export function SuspectDetailModal({
                 <Field label="In System Since" value={detail.created_at ? formatDistanceToNow(new Date(detail.created_at), { addSuffix: true }) : null} />
               </div>
 
+              {/* Community civil profile (village leader reporting format) */}
+              {communityProfile && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Megaphone className="h-3.5 w-3.5 text-orange-400" />
+                    Community Profile — Village Leader Record
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <Field label="Party Status" value={communityProfile.party_status} />
+                    <Field label="Father's Name" value={communityProfile.father_name} />
+                    <Field label="Mother's Name" value={communityProfile.mother_name} />
+                    <Field label="Place of Birth" value={communityProfile.place_of_birth} />
+                    <Field label="Residential Address" value={communityProfile.residential_address} />
+                    <Field label="Domicile Address" value={communityProfile.domicile_address} />
+                    <Field label="Telephone" value={communityProfile.telephone} />
+                    <Field label="Email" value={communityProfile.email} />
+                    <Field label="ID / Passport" value={communityProfile.national_id_or_passport} />
+                    <Field label="Marital Status" value={communityProfile.marital_status} />
+                    <Field label="Profession" value={communityProfile.profession} />
+                    <Field label="Health Status" value={communityProfile.health_status} />
+                    <Field label="Education Level" value={communityProfile.education_level} />
+                    <Field label="Children" value={communityProfile.number_of_children} />
+                    <Field label="Alt. Contact" value={communityProfile.alternative_contact} />
+                  </div>
+                  {communityProfile.properties && (
+                    <div className="mt-2 bg-slate-800/60 rounded-lg p-3">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider">Properties</p>
+                      <p className="text-xs text-slate-200 mt-0.5">{communityProfile.properties}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {detail.distinguishing_marks && (
                 <div>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Distinguishing Marks</p>
@@ -370,6 +443,49 @@ export function SuspectDetailModal({
                           </div>
                         )
                       })}
+                  </div>
+                </div>
+              )}
+
+              {/* Community insecurity reports (all institutions see these) */}
+              {communityReports.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Megaphone className="h-3.5 w-3.5 text-orange-400" />
+                    Community Reports ({communityReports.length})
+                  </p>
+                  <div className="space-y-2">
+                    {communityReports.map(r => (
+                      <div key={r.id} className="rounded-lg px-4 py-2.5 border bg-orange-950/10 border-orange-900/30">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-slate-200">
+                            {String(r.insecurity_type ?? 'REPORT').replace(/_/g, ' ')}
+                          </p>
+                          <span className="text-[10px] text-slate-500 shrink-0">
+                            {r.reported_at ? format(new Date(r.reported_at), 'dd MMM yyyy HH:mm') : '—'}
+                          </span>
+                        </div>
+                        {r.description && (
+                          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{r.description}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
+                          {r.reporter && (
+                            <p className="text-[10px] text-slate-500">
+                              Reported by {r.reporter.full_name} ({r.reporter.badge_number}) · Village Leader
+                            </p>
+                          )}
+                          {r.location_description && (
+                            <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {r.location_description}
+                            </p>
+                          )}
+                          {!!r.file_urls?.length && (
+                            <p className="text-[10px] text-slate-500">{r.file_urls.length} exhibit(s)</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
