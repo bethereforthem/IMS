@@ -130,6 +130,17 @@ export const patrolApi = {
       location_description: location?.description ?? null,
     }),
 
+  screen: (query: string, location?: { lat: number; lng: number; description?: string }) =>
+    api.post<{
+      found: boolean
+      matches?: { status: string; threat_level: number | null; owning_institution: string }[]
+    }>('/patrol/screen', {
+      query,
+      location_lat: location?.lat ?? null,
+      location_lng: location?.lng ?? null,
+      location_description: location?.description ?? null,
+    }),
+
   myReports: (limit = 50) =>
     api.get<{ events: IntelligenceEvent[]; total: number }>('/patrol/report', { params: { limit } }),
 
