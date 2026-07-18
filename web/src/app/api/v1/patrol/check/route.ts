@@ -23,12 +23,12 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     // SHA-256 hash matches PostgreSQL: encode(sha256('NID'::bytea), 'hex')
     const nid_hash = createHash('sha256').update(String(nid)).digest('hex')
 
-    // Query suspect — exclude CLEARED status (they are clean)
+    // Query suspect — deceased records are not actionable matches
     const { data: suspect, error: queryError } = await supabase
       .from('suspects')
       .select('id, status, threat_level, owning_institution')
-      .eq('nid_hash', nid_hash)
-      .not('status', 'eq', 'CLEARED')
+      .eq('national_id_hash', nid_hash)
+      .not('status', 'eq', 'DECEASED')
       .maybeSingle()
 
     if (queryError) {
