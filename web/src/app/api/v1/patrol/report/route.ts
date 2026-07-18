@@ -53,6 +53,44 @@ function maskId(raw: string): string {
   return `••••${digits.slice(-4)}`
 }
 
+// ---------------------------------------------------------------------------
+// GET /api/v1/patrol/report
+// Own activity feed for village leaders. GET /intelligence/events requires
+// source_attribution:read which VILLAGE_LEADER deliberately lacks — this
+// returns only the caller's own events under their intel:report permission.
+// ---------------------------------------------------------------------------
+export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPayload; params?: Record<string, string> }) => {
+  try {
+    const supabase = createServerSupabaseClient()
+    const url = new URL(req.url)
+    const rawLimit = parseInt(url.searchParams.get('limit') ?? '50', 10)
+    const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit))
+
+    const { data: events, count, error } = await supabase
+      .from('intelligence_events')
+      .select('*', { count: 'exact' })
+      .eq('officer_id', user.user_id)
+      .order('event_timestamp', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      console.error('[patrol/report GET]', error)
+      return apiError('Failed to fetch your reports', 500)
+    }
+
+    const mapped = (events ?? []).map((e: Record<string, unknown>) => ({
+      ...e,
+      reporting_officer_id: e.officer_id,
+      created_at: e.event_timestamp ?? e.created_at,
+    }))
+
+    return apiSuccess({ events: mapped, total: count ?? 0 })
+  } catch (err) {
+    console.error('[patrol/report GET]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'intel:report')
+
 export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayload; params?: Record<string, string> }) => {
   try {
     const supabase = createServerSupabaseClient()
