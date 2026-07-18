@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { StatCard } from '@/components/shared/StatCard'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
 import { useAuth } from '@/hooks/useAuth'
-import { intelligenceApi } from '@/lib/api'
+import { patrolApi } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import type { IntelligenceEvent } from '@/types'
 import {
@@ -18,15 +18,25 @@ export default function PatrolActivityPage() {
   const [events, setEvents] = useState<IntelligenceEvent[]>([])
 
   useEffect(() => {
-    intelligenceApi.listEvents({ limit: 50 }).then(r => {
-      if (r.data?.events?.length) {
-        const mine = r.data.events.filter(
-          (e: IntelligenceEvent) => e.reporting_officer_id === user?.id
-        )
-        setEvents(mine.length ? mine : r.data.events.slice(0, 10))
-      }
+    if (!user?.id) return
+    // VILLAGE_LEADER cannot read the global events feed (source_attribution:read)
+    // — GET /patrol/report returns only the caller's own events
+    patrolApi.myReports(100).then(r => {
+      setEvents(r.data?.events ?? [])
     }).catch(() => {})
   }, [user?.id])
+
+  // Community report notes are stored as JSON — render them human-readable
+  function summarizeNotes(notes?: string): string {
+    if (!notes) return ''
+    try {
+      const p = JSON.parse(notes) as { person_name?: string; insecurity_type?: string; description?: string }
+      const type = p.insecurity_type ? String(p.insecurity_type).replace(/_/g, ' ') : ''
+      return [p.person_name, type, p.description].filter(Boolean).join(' — ')
+    } catch {
+      return notes
+    }
+  }
 
   const totalChecks = events.length
   const recordsFound = events.filter(e => e.criminal_record_found).length
@@ -126,7 +136,7 @@ export default function PatrolActivityPage() {
                     <p className={clsx('text-xs font-semibold', resultCls)}>{resultText}</p>
 
                     {e.notes && (
-                      <p className="text-xs text-slate-500 italic mt-1 leading-relaxed">{e.notes}</p>
+                      <p className="text-xs text-slate-500 italic mt-1 leading-relaxed">{summarizeNotes(e.notes)}</p>
                     )}
                   </div>
                 </div>
