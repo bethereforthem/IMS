@@ -99,7 +99,7 @@ export const suspectsApi = {
 // ─── Intelligence events ─────────────────────────────────────────────────────
 
 export const intelligenceApi = {
-  listEvents: (params?: { source_tag?: string; limit?: number }) =>
+  listEvents: (params?: { source_tag?: string; limit?: number; officer_id?: string }) =>
     api.get<{ events: IntelligenceEvent[]; total: number }>('/intelligence/events', { params }),
   getEvent: (id: string) => api.get<IntelligenceEvent>(`/intelligence/events/${id}`),
   acknowledgeAlert: (alertId: string) => api.patch(`/alerts/${alertId}/read`),
@@ -129,6 +129,9 @@ export const patrolApi = {
       location_lng: location?.lng ?? null,
       location_description: location?.description ?? null,
     }),
+
+  myReports: (limit = 50) =>
+    api.get<{ events: IntelligenceEvent[]; total: number }>('/patrol/report', { params: { limit } }),
 
   submitReport: (data: {
     person_name?: string
