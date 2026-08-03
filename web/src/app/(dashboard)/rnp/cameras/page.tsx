@@ -161,7 +161,9 @@ function CameraCard({ camera }: { camera: CameraNode }) {
           <span className={clsx(
             camera.is_active ? 'text-green-400' : 'text-red-400'
           )}>
-            {formatDistanceToNow(new Date(camera.last_heartbeat), { addSuffix: true })}
+            {camera.last_heartbeat
+              ? formatDistanceToNow(new Date(camera.last_heartbeat), { addSuffix: true })
+              : 'never'}
           </span>
         </div>
         {camera.latitude != null && camera.longitude != null && (
