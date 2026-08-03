@@ -115,7 +115,7 @@ export const DELETE = withAuth(async (req: NextRequest, { user, params }) => {
 
     const { data: updated, error } = await db
       .from('corrections_records')
-      .update({ custody_status: 'RELEASED', actual_release_date: new Date().toISOString().split('T')[0] })
+      .update({ custody_status: 'RELEASED', actual_release_at: new Date().toISOString() })
       .eq('id', id).select().single()
 
     if (error) return apiError('Failed to release record', 500)
