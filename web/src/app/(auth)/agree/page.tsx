@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { policyApi, type PolicyDocument } from '@/lib/api'
@@ -48,7 +48,21 @@ const TYPE_ORDER: PolicyType[] = [
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// useSearchParams() forces client-side bail-out, so the page shell must sit
+// behind a Suspense boundary or the production prerender of /agree fails
 export default function AgreePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      </div>
+    }>
+      <AgreeContent />
+    </Suspense>
+  )
+}
+
+function AgreeContent() {
   const { user, loading: authLoading, logout } = useAuth()
   const router      = useRouter()
   const searchParams = useSearchParams()
