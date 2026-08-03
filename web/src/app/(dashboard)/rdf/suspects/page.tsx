@@ -21,6 +21,7 @@ const statusBadge: Record<SuspectStatus, string> = {
   RELEASED:        'bg-green-500/20 text-green-400',
   INTERPOL_FLAGGED:'bg-orange-500/20 text-orange-400',
   DECEASED:        'bg-slate-600/20 text-slate-500',
+  CLEARED:         'bg-green-500/10 text-green-500',
 }
 
 const clearanceBadge: Record<ClearanceLevel, string> = {
