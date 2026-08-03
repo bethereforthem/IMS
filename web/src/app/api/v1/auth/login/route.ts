@@ -111,15 +111,16 @@ async function createSecurityIncident(
 ): Promise<string | null> {
   try {
     // Create a CRITICAL alert first
-    const { data: alert } = await db.from('alerts').insert({
-      type: 'SECURITY_INCIDENT',
+    const { data: alert, error: alertError } = await db.from('alerts').insert({
       severity: params.severity,
+      source_tag: 'SYSTEM_ALERT',
       title: `🚨 IDS Alert: ${params.incident_type.replace(/_/g, ' ')}`,
-      description: params.description,
-      source_institution: params.institution ?? 'SYSTEM',
+      message: `[${params.institution ?? 'SYSTEM'}] ${params.description}`,
       requires_action: params.severity === 'CRITICAL',
       is_read: false,
     }).select('id').single()
+
+    if (alertError) console.error('[IDS] alert insert error', alertError)
 
     const { data: incident } = await db.from('security_incidents').insert({
       incident_type: params.incident_type,
