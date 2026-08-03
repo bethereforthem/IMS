@@ -129,7 +129,9 @@ export default function NISSCamerasPage() {
                   Last Heartbeat
                 </span>
                 <span className={clsx('text-[11px]', cam.is_active ? 'text-slate-400' : 'text-red-400')}>
-                  {formatDistanceToNow(new Date(cam.last_heartbeat), { addSuffix: true })}
+                  {cam.last_heartbeat
+                    ? formatDistanceToNow(new Date(cam.last_heartbeat), { addSuffix: true })
+                    : 'never'}
                 </span>
               </div>
               {cam.latitude != null && (
