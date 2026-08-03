@@ -32,7 +32,8 @@ export const POST = withAuth(
         .update({
           is_read: true,
           requires_action: false,
-          updated_at: new Date().toISOString(),
+          read_by: user.user_id,
+          read_at: new Date().toISOString(),
         })
         .eq('id', alert_id)
 
