@@ -51,11 +51,13 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     // Lock the user account
     const { error: lockError } = await supabase
       .from('users')
-      .update({ locked: true, locked_at: new Date().toISOString() })
+      .update({ locked: true, active: false, updated_at: new Date().toISOString() })
       .eq('id', target_user_id)
 
+    // A failed lock must not report success — the account would stay usable
     if (lockError) {
       console.error('[revoke-access] user lock error', lockError)
+      return apiError('Failed to revoke access — account was not locked', 500)
     }
 
     // Revoke all active sessions for the target user
