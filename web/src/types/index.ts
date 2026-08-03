@@ -18,7 +18,7 @@ export type SourceTag =
 
 export type SuspectStatus =
   | 'WANTED' | 'ACTIVE' | 'IN_CUSTODY' | 'ARRESTED'
-  | 'CONVICTED' | 'RELEASED' | 'DECEASED' | 'INTERPOL_FLAGGED'
+  | 'CONVICTED' | 'RELEASED' | 'DECEASED' | 'INTERPOL_FLAGGED' | 'CLEARED'
 
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
