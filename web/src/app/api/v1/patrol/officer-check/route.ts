@@ -26,7 +26,8 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     const { data: suspect, error: queryError } = await supabase
       .from('suspects')
       .select('id, full_name, ims_reference, status, threat_level, owning_institution, nationality')
-      .eq('nid_hash', nid_hash)
+      .eq('national_id_hash', nid_hash)
+      .limit(1)
       .maybeSingle()
 
     if (queryError) {
