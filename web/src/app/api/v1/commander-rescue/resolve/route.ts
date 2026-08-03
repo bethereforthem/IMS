@@ -34,7 +34,8 @@ export const POST = withAuth(
         .update({
           is_read: true,
           requires_action: false,
-          updated_at: new Date().toISOString(),
+          read_by: user.user_id,
+          read_at: new Date().toISOString(),
         })
         .eq('id', alert_id)
 
@@ -42,7 +43,7 @@ export const POST = withAuth(
       if (tracking_session_id) {
         await supabase
           .from('agent_tracking_sessions')
-          .update({ status: 'CLOSED', ended_at: new Date().toISOString() })
+          .update({ status: 'CLOSED', closed_at: new Date().toISOString(), closed_by: user.user_id })
           .eq('id', tracking_session_id)
       }
 
@@ -60,7 +61,7 @@ export const POST = withAuth(
         if (session?.id) {
           await supabase
             .from('agent_tracking_sessions')
-            .update({ status: 'CLOSED', ended_at: new Date().toISOString() })
+            .update({ status: 'CLOSED', closed_at: new Date().toISOString(), closed_by: user.user_id })
             .eq('id', session.id)
         }
       }
