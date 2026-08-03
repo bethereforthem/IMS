@@ -53,26 +53,30 @@ export const POST = withAuth(
         .select('id, status, first_name, last_name, passport_number')
         .or(`national_id_hash.eq.${nidHash},passport_number.eq.${docNum}`)
         .not('status', 'eq', 'CLEARED')
+        .limit(1)
         .maybeSingle()
 
       if (suspect) {
         suspect_match   = true
         ims_suspect_id  = suspect.id
 
-        // Check active warrants
+        // Check active warrants — limit(1) because maybeSingle() errors (and
+        // would silently read as "no match") when a suspect has several
         const { data: warrant } = await db
           .from('warrants')
           .select('id')
           .eq('suspect_id', suspect.id)
           .eq('active', true)
+          .limit(1)
           .maybeSingle()
         warrant_match = !!warrant
 
-        // Check watchlists
+        // Check watchlists (composite PK — no id column)
         const { data: wl } = await db
           .from('watchlist_entries')
-          .select('id')
+          .select('suspect_id')
           .eq('suspect_id', suspect.id)
+          .limit(1)
           .maybeSingle()
         watchlist_match = !!wl
 
@@ -81,6 +85,7 @@ export const POST = withAuth(
           .from('interpol_notices')
           .select('id')
           .eq('suspect_id', suspect.id)
+          .limit(1)
           .maybeSingle()
         interpol_match = !!interpol
       }
