@@ -29,6 +29,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       .select('id, status, threat_level, owning_institution')
       .eq('national_id_hash', nid_hash)
       .not('status', 'eq', 'DECEASED')
+      .limit(1)
       .maybeSingle()
 
     if (queryError) {
