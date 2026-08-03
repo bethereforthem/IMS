@@ -52,7 +52,8 @@ function CyberCanvas() {
     let radarAngle = 0
 
     // ── Hex grid ──
-    function drawHex(cx: number, cy: number, size: number, alpha: number) {
+    // arrow const, not a hoisted declaration, so the `ctx` non-null narrowing holds
+    const drawHex = (cx: number, cy: number, size: number, alpha: number) => {
       ctx.beginPath()
       for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i - Math.PI / 6
@@ -154,10 +155,6 @@ function CyberCanvas() {
       ctx.beginPath(); ctx.moveTo(rx - rr, ry); ctx.lineTo(rx + rr, ry); ctx.stroke()
       ctx.beginPath(); ctx.moveTo(rx, ry - rr); ctx.lineTo(rx, ry + rr); ctx.stroke()
       // Sweep gradient
-      const sweep = ctx.createConicalGradient
-        ? null
-        : null
-      void sweep
       ctx.save()
       ctx.translate(rx, ry)
       ctx.rotate(radarAngle)
@@ -397,7 +394,7 @@ export default function LoginPage() {
       const { data } = await authApi.login(badge.trim().toUpperCase(), password)
       const payload  = parseJwt(data.access_token)
       if (!payload) throw new Error('Invalid token')
-      login(data.access_token, data.refresh_token, payload as Parameters<typeof login>[2])
+      login(data.access_token, data.refresh_token, payload as unknown as Parameters<typeof login>[2])
       toast.success(`Access granted — ${String(payload.full_name)}`)
       router.push(dashboardRoute(String(payload.role) as Parameters<typeof dashboardRoute>[0]))
     } catch (err: unknown) {
