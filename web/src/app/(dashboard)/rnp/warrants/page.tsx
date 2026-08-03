@@ -20,7 +20,19 @@ const PRIORITY_BADGE: Record<string, string> = {
   LOW: 'bg-slate-800 text-slate-400',
 }
 
-const TODAY = new Date('2026-06-30')
+interface WarrantRow {
+  id: string
+  reference: string
+  suspect: string
+  charge: string
+  issuing_court: string
+  issued: string
+  expires: string
+  priority: string
+  status: 'ACTIVE' | 'EXPIRED'
+}
+
+const TODAY = new Date()
 
 function isExpiringSoon(expiresStr: string): boolean {
   const exp = new Date(expiresStr)
@@ -36,20 +48,21 @@ export default function WarrantsPage() {
   const { user } = useAuth()
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE')
-  const [warrants, setWarrants] = useState<Record<string, unknown>[]>([])
+  const [warrants, setWarrants] = useState<WarrantRow[]>([])
 
   useEffect(() => {
     warrantsApi.list({ active: true, limit: 100 }).then(r => {
       if (r.data?.warrants?.length) {
         setWarrants(
-          r.data.warrants.map((w: Record<string, unknown>) => ({
-            ...w,
-            reference: w.case_reference ?? `WRT-${String(w.id).slice(0, 8).toUpperCase()}`,
-            suspect: (w.suspects as Record<string, unknown>)?.full_name ?? 'Unknown',
-            charge: w.charges,
-            issued: w.issued_at,
-            expires: w.expires_at,
-            issuing_court: w.issued_by_court ?? w.issued_by,
+          r.data.warrants.map((w: Record<string, unknown>): WarrantRow => ({
+            id: String(w.id),
+            reference: String(w.case_reference ?? `WRT-${String(w.id).slice(0, 8).toUpperCase()}`),
+            suspect: String((w.suspects as Record<string, unknown>)?.full_name ?? 'Unknown'),
+            charge: String(w.charges ?? ''),
+            issued: String(w.issued_at ?? ''),
+            expires: String(w.expires_at ?? ''),
+            issuing_court: String(w.issued_by_court ?? w.issued_by ?? ''),
+            priority: String(w.priority ?? 'MEDIUM'),
             status: w.active ? 'ACTIVE' : 'EXPIRED',
           }))
         )
@@ -65,7 +78,7 @@ export default function WarrantsPage() {
 
   const activeCount = warrants.filter(w => w.status === 'ACTIVE').length
   const criticalCount = warrants.filter(w => w.priority === 'CRITICAL' && w.status === 'ACTIVE').length
-  const expiringSoonCount = warrants.filter(w => w.status === 'ACTIVE' && isExpiringSoon(w.expires as string)).length
+  const expiringSoonCount = warrants.filter(w => w.status === 'ACTIVE' && isExpiringSoon(w.expires)).length
   const expiredCount = warrants.filter(w => w.status === 'EXPIRED').length
 
   return (
