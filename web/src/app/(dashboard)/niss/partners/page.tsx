@@ -29,7 +29,7 @@ export default function NISSPartnersPage() {
 
   useEffect(() => {
     partnersApi.list().then((r) => {
-      if (r.data?.partners?.length) setPartners(r.data.partners as Partner[])
+      if (r.data?.partners?.length) setPartners(r.data.partners as unknown as Partner[])
     }).catch(() => {})
 
     intelligenceApi.listEvents({ limit: 100 }).then((r) => {
