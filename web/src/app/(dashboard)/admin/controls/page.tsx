@@ -4,7 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { adminPortalApi, type SystemControl } from '@/lib/api'
 import { Settings, Lock, Unlock, Power, PowerOff, Building } from 'lucide-react'
 
-const INSTITUTIONS = ['NISS', 'RNP', 'RIB', 'RDF', 'RCS']
+// Must match what `institutionForRole` returns, since that is the value stored
+// on a session and compared against the lockdown list. VILLAGE_LEADER is a real
+// institution with its own dashboard and was previously impossible to lock.
+const INSTITUTIONS = ['NISS', 'RNP', 'RIB', 'RDF', 'RCS', 'VILLAGE_LEADER']
 const SERVICES = [
   { key: 'agent_tracking',    label: 'Agent Tracking' },
   { key: 'commander_rescue',  label: 'Commander Rescue' },
@@ -42,7 +45,10 @@ export default function AdminControlsPage() {
       setMsg(`✓ ${action.replace(/_/g, ' ')} applied`)
       load()
     } catch (e: unknown) {
-      setMsg(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      // Axios only reports "Request failed with status code 403" — show the
+      // reason the server gave instead.
+      const detail = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setMsg(`Error: ${detail ?? (e instanceof Error ? e.message : 'Unknown error')}`)
     } finally {
       setWorking(null)
       setConfirmAction(null)
