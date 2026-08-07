@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError, getPagination } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/warrants
@@ -101,6 +102,19 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       console.error('[POST /api/v1/warrants]', error)
       return apiError('Failed to create warrant', 500)
     }
+
+    // Issuing a warrant left no audit record at all. Every other write path in
+    // the system logs, and a warrant is among the most consequential actions an
+    // officer can take here — it must be attributable.
+    await logAudit({
+      event_type:  'WARRANT_CREATED',
+      action:      'CREATE',
+      actor:       user,
+      target_type: 'warrant',
+      target_id:   warrant.id,
+      after_state: warrant,
+      context:     extractAuditContext(req),
+    })
 
     return apiSuccess(warrant, 201)
   } catch (err) {
