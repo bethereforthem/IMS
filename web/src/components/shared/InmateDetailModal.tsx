@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { X, Shield, Loader2, User, Building2, Gavel, Users, Plus, Trash2 } from 'lucide-react'
-import { correctionsApi } from '@/lib/api'
+import { correctionsApi, apiErrorMessage } from '@/lib/api'
+import { useFacilities } from '@/hooks/useFacilities'
 import { format } from 'date-fns'
 
 interface VisitorEntry {
@@ -52,24 +53,41 @@ function newVisitor(): VisitorEntry {
   }
 }
 
+/** Mirrors the `custody_status` enum the API validates against. */
+const CUSTODY_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'PRE_TRIAL',   label: 'PRE TRIAL' },
+  { value: 'SENTENCED',   label: 'SENTENCED' },
+  { value: 'TRANSFERRED', label: 'TRANSFERRED' },
+  { value: 'RELEASED',    label: 'RELEASED' },
+  { value: 'ESCAPED',     label: 'ESCAPED — raises a CRITICAL alert' },
+  { value: 'DECEASED',    label: 'DECEASED' },
+]
+
 export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('personal')
+  const { facilities } = useFacilities()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  // Identity lives on `suspects`, not on the custody record, so it is shown
+  // read-only — the corrections PATCH route has no way to persist it and the
+  // editable inputs it used to render silently discarded every change.
+  const [identity, setIdentity] = useState({
+    full_name: '', ims_reference: '', suspect_status: '',
+    nationality: '', date_of_birth: '',
+  })
+  const [initialStatus, setInitialStatus] = useState('')
   const [showAddVisitor, setShowAddVisitor] = useState(false)
   const [newVisitorForm, setNewVisitorForm] = useState<VisitorEntry>(newVisitor())
 
   const [form, setForm] = useState({
     // Personal
-    full_name: '',
     father_name: '',
     mother_name: '',
     sex: '',
-    date_of_birth: '',
     place_of_birth: '',
-    nationality: '',
     national_id: '',
     party_status: '',
     marital_status: '',
@@ -99,9 +117,6 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
     sentence_years: '',
     offense_description: '',
     court_conclusion: '',
-    // Meta
-    ims_reference: '',
-    suspect_status: '',
   })
 
   const [visitors, setVisitors] = useState<VisitorEntry[]>([])
@@ -110,14 +125,19 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
     correctionsApi.get(correctionId).then(r => {
       const d = r.data as Record<string, unknown>
       const suspects = d.suspects as Record<string, unknown> | null
-      setForm({
+      setIdentity({
         full_name: String(suspects?.full_name ?? d.full_name ?? ''),
+        ims_reference: String(suspects?.ims_reference ?? d.ims_reference ?? ''),
+        suspect_status: String(suspects?.status ?? d.suspect_status ?? ''),
+        nationality: String(suspects?.nationality ?? ''),
+        date_of_birth: suspects?.date_of_birth ? String(suspects.date_of_birth).split('T')[0] : '',
+      })
+      setInitialStatus(String(d.custody_status ?? ''))
+      setForm({
         father_name: String(d.father_name ?? ''),
         mother_name: String(d.mother_name ?? ''),
         sex: String(d.sex ?? ''),
-        date_of_birth: d.date_of_birth ? String(d.date_of_birth).split('T')[0] : '',
         place_of_birth: String(d.place_of_birth ?? ''),
-        nationality: String(d.nationality ?? suspects?.nationality ?? ''),
         national_id: String(d.national_id ?? ''),
         party_status: String(d.party_status ?? ''),
         marital_status: String(d.marital_status ?? ''),
@@ -145,8 +165,6 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
         sentence_years: d.sentence_years != null ? String(d.sentence_years) : '',
         offense_description: String(d.offense_description ?? ''),
         court_conclusion: String(d.court_conclusion ?? ''),
-        ims_reference: String(suspects?.ims_reference ?? d.ims_reference ?? ''),
-        suspect_status: String(suspects?.status ?? d.suspect_status ?? ''),
       })
       const vl = d.visitor_log
       if (Array.isArray(vl)) {
@@ -188,16 +206,26 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
   }
 
   async function handleSave() {
+    // An escape is a cross-institutional broadcast, not an ordinary field edit.
+    if (form.custody_status === 'ESCAPED' && initialStatus !== 'ESCAPED') {
+      const ok = window.confirm(
+        `Mark ${identity.full_name || 'this inmate'} as ESCAPED?\n\n` +
+        'This records the escape on the custody record and immediately raises a ' +
+        'CRITICAL alert to RCS, RNP, NISS and RDF.'
+      )
+      if (!ok) return
+    }
+
     setSaving(true)
     setError(null)
+    setWarning(null)
     setSaved(false)
     try {
-      await correctionsApi.update(correctionId, {
+      const res = await correctionsApi.update(correctionId, {
         father_name: form.father_name || undefined,
         mother_name: form.mother_name || undefined,
         sex: form.sex || undefined,
         place_of_birth: form.place_of_birth || undefined,
-        nationality: form.nationality || undefined,
         national_id: form.national_id || undefined,
         party_status: form.party_status || undefined,
         marital_status: form.marital_status || undefined,
@@ -227,12 +255,23 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
         court_conclusion: form.court_conclusion || undefined,
         visitor_log: visitors,
       })
+
+      const data = res.data as { unsupported_fields?: string[]; escape_alert_id?: string }
+      if (data?.unsupported_fields?.length) {
+        setWarning(
+          `Saved, but ${data.unsupported_fields.length} field(s) could not be stored ` +
+          `(${data.unsupported_fields.join(', ')}). A pending database migration is required.`
+        )
+      } else if (data?.escape_alert_id) {
+        setWarning('Escape recorded — a CRITICAL alert has been broadcast to RCS, RNP, NISS and RDF.')
+      }
+
+      setInitialStatus(form.custody_status)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
       onSuccess?.()
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } }
-      setError(e.response?.data?.message ?? 'Failed to save changes.')
+      setError(apiErrorMessage(err, 'Failed to save changes.'))
     } finally {
       setSaving(false)
     }
@@ -248,11 +287,11 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
             <Shield className="h-5 w-5 text-amber-400" />
             <div>
               <h2 className="text-sm font-bold text-white">
-                {loading ? 'Loading…' : form.full_name || 'Inmate Record'}
+                {loading ? 'Loading…' : identity.full_name || 'Inmate Record'}
               </h2>
-              {!loading && form.ims_reference && (
+              {!loading && identity.ims_reference && (
                 <p className="text-[10px] font-mono text-amber-400/70 mt-0.5">
-                  {form.ims_reference} · {form.suspect_status}
+                  {identity.ims_reference} · {identity.suspect_status}
                 </p>
               )}
             </div>
@@ -304,12 +343,37 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={LABEL}>Full Name</label>
-                      <input value={form.full_name} onChange={e => set('full_name', e.target.value)}
-                        className={INPUT} />
+                  {/* Identity comes from the linked IMS suspect record and is
+                      not editable here — the custody record does not own it. */}
+                  <div className="rounded-lg border border-slate-800 bg-slate-800/40 p-3 space-y-2">
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">
+                      IMS Suspect Record — read only
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-500">Full name: </span>
+                        <span className="text-white font-medium">{identity.full_name || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">IMS reference: </span>
+                        <span className="font-mono text-amber-400">{identity.ims_reference || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Date of birth: </span>
+                        <span className="text-slate-200">{identity.date_of_birth || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Nationality: </span>
+                        <span className="text-slate-200">{identity.nationality || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Suspect status: </span>
+                        <span className="text-slate-200">{identity.suspect_status || '—'}</span>
+                      </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={LABEL}>Party Status</label>
                       <select value={form.party_status} onChange={e => set('party_status', e.target.value)} className={SELECT}>
@@ -335,10 +399,6 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
 
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className={LABEL}>Date of Birth</label>
-                      <input type="date" value={form.date_of_birth} onChange={e => set('date_of_birth', e.target.value)} className={INPUT} />
-                    </div>
-                    <div>
                       <label className={LABEL}>Sex</label>
                       <select value={form.sex} onChange={e => set('sex', e.target.value)} className={SELECT}>
                         <option value="">Select...</option>
@@ -349,13 +409,6 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
                     <div>
                       <label className={LABEL}>Place of Birth</label>
                       <input value={form.place_of_birth} onChange={e => set('place_of_birth', e.target.value)} className={INPUT} />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={LABEL}>Nationality</label>
-                      <input value={form.nationality} onChange={e => set('nationality', e.target.value)} className={INPUT} />
                     </div>
                     <div>
                       <label className={LABEL}>National ID / Passport Number</label>
@@ -454,16 +507,18 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={LABEL}>Facility</label>
-                      <select value={form.facility_name} onChange={e => set('facility_name', e.target.value)} className={SELECT}>
-                        <option value="">Select facility...</option>
-                        <option value="Mageragere">Mageragere Prison</option>
-                        <option value="Nyarugenge">Nyarugenge Prison</option>
-                        <option value="Mpanga">Mpanga Central Prison</option>
-                        <option value="Nyagatare">Nyagatare Prison</option>
-                        <option value="Rwamagana">Rwamagana Prison</option>
-                        <option value="Huye">Huye Prison</option>
-                      </select>
+                      <label className={LABEL} htmlFor="inmate-facility">Facility</label>
+                      <input
+                        id="inmate-facility"
+                        list="rcs-facility-options-detail"
+                        value={form.facility_name}
+                        onChange={e => set('facility_name', e.target.value)}
+                        className={INPUT}
+                        placeholder="Facility name"
+                      />
+                      <datalist id="rcs-facility-options-detail">
+                        {facilities.map(f => <option key={f} value={f} />)}
+                      </datalist>
                     </div>
                     <div>
                       <label className={LABEL}>Cell Block</label>
@@ -476,9 +531,12 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
                     <div>
                       <label className={LABEL}>Custody Status</label>
                       <select value={form.custody_status} onChange={e => set('custody_status', e.target.value)} className={SELECT}>
-                        <option value="PRE_TRIAL">PRE TRIAL</option>
-                        <option value="SENTENCED">SENTENCED</option>
-                        <option value="RELEASED">RELEASED</option>
+                        {!CUSTODY_STATUS_OPTIONS.some(o => o.value === form.custody_status) && (
+                          <option value={form.custody_status}>{form.custody_status || 'Select…'}</option>
+                        )}
+                        {CUSTODY_STATUS_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -725,7 +783,10 @@ export function InmateDetailModal({ correctionId, onClose, onSuccess }: Props) {
           {error && (
             <p className="text-xs text-red-400 bg-red-950/30 border border-red-900 rounded-lg px-3 py-2 mb-3">{error}</p>
           )}
-          {saved && (
+          {warning && (
+            <p className="text-xs text-amber-300 bg-amber-950/30 border border-amber-800 rounded-lg px-3 py-2 mb-3">{warning}</p>
+          )}
+          {saved && !warning && (
             <p className="text-xs text-green-400 bg-green-950/30 border border-green-900 rounded-lg px-3 py-2 mb-3">
               Changes saved successfully.
             </p>
