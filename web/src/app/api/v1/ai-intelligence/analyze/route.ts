@@ -449,7 +449,38 @@ Improve each explanation to 2-3 sentences with specific Rwanda crime intelligenc
         { run_id: runId, institution, insight_type: 'CRIME_PREDICTIONS', title: 'Future Crime Predictions', content: ca.predictions, priority: 'CRITICAL', expires_at: insightExpiry },
       ]
 
-      const { data: savedInsights } = await db.from('ai_insight_cache').insert(allInsightRows).select('*')
+      // One batch insert discarded every insight whenever a single row was
+      // rejected — and the error was thrown away, so the run still completed
+      // and the panel simply showed no insights. `insight_type` has a CHECK
+      // constraint that predates the WHO/WHEN/WHERE/HOW/CRIME_PREDICTIONS
+      // rows above (see database/migrations/20260807_ai_insight_types.sql), so
+      // that is exactly what happened on every run.
+      //
+      // Try the batch first, then fall back to per-row inserts so a rejected
+      // type costs only itself.
+      let savedInsights: Record<string, unknown>[] | null = null
+      const batch = await db.from('ai_insight_cache').insert(allInsightRows).select('*')
+      if (batch.error) {
+        console.warn('[ai-intelligence/analyze] batch insight insert failed, retrying row by row:', batch.error.message)
+        const settled = await Promise.all(
+          allInsightRows.map(row =>
+            db.from('ai_insight_cache').insert(row).select('*').single()
+              .then(r => {
+                if (r.error) {
+                  console.warn(`[ai-intelligence/analyze] insight "${row.insight_type}" rejected: ${r.error.message}`)
+                  return null
+                }
+                return r.data
+              })
+          )
+        )
+        savedInsights = settled.filter((r): r is Record<string, unknown> => r !== null)
+        if (savedInsights.length === 0) {
+          console.error('[ai-intelligence/analyze] no insights could be persisted for run', runId)
+        }
+      } else {
+        savedInsights = batch.data
+      }
 
       // ── Complete ──────────────────────────────────────────────────────
       await db.from('ai_prediction_runs').update({ status: 'COMPLETED', completed_at: new Date().toISOString() }).eq('id', runId)
