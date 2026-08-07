@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
+import { assertRwLocations } from '@/lib/rw-locations-server'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/cases/[id]/report
@@ -39,6 +40,26 @@ export const PUT = withAuth(async (req: NextRequest, { user, params }) => {
     const { report_data, status } = body as { report_data: Record<string, unknown>; status?: string }
 
     if (!report_data) return apiError('report_data is required', 400)
+
+    // Re-validate every administrative chain in the payload against the
+    // official dataset. The client cascade cannot be trusted on its own, and
+    // sector/cell/village names repeat across the country — so "Karambi" is
+    // only meaningful once it has been checked against its parents.
+    const locationCheck = assertRwLocations([
+      { label: 'Crime scene', value: report_data.crime_info },
+      ...(['victims', 'suspects', 'witnesses'] as const).flatMap(group => {
+        const people = report_data[group]
+        return Array.isArray(people)
+          ? people.map((person, i) => ({
+              label: `${group.slice(0, -1)} ${i + 1} address`,
+              value: person,
+            }))
+          : []
+      }),
+    ])
+    if (!locationCheck.ok) {
+      return apiError(locationCheck.errors.join('; '), 400)
+    }
 
     const supabase = createServerSupabaseClient()
 
