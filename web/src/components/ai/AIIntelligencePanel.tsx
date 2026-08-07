@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { aiIntelligenceApi, type AIPrediction, type AIInsight, type AIPredictionRun } from '@/lib/api'
+import { aiIntelligenceApi, apiErrorMessage, type AIPrediction, type AIInsight, type AIPredictionRun } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   Brain, RefreshCw, TrendingUp, TrendingDown, Minus,
@@ -46,6 +46,9 @@ export default function AIIntelligencePanel() {
   const [feedbackMsg,  setFeedbackMsg]  = useState('')
   const [hasData,      setHasData]      = useState(false)
   const [inProgress,   setInProgress]   = useState(false)
+  const [lastFailure,  setLastFailure]  = useState<{ created_at?: string; error_message?: string } | null>(null)
+  const [stale,        setStale]        = useState(false)
+  const [validUntil,   setValidUntil]   = useState<string | null>(null)
   const [stats, setStats] = useState<{
     incidents_analyzed: number; clusters_found: number
     temporal_pattern: string; top_category: string | null; feedback_accuracy: number
@@ -62,10 +65,13 @@ export default function AIIntelligencePanel() {
       setInsights(d.insights)
       setHasData(d.has_data)
       setInProgress(d.analysis_in_progress)
+      setLastFailure(d.last_failure ?? null)
+      setStale(d.stale ?? false)
+      setValidUntil(d.valid_until ?? null)
       setLoadState('done')
-    } catch {
+    } catch (e: unknown) {
       setLoadState('error')
-      setErrorMsg('Failed to load predictions')
+      setErrorMsg(apiErrorMessage(e, 'Failed to load predictions'))
     }
   }, [])
 
@@ -109,7 +115,11 @@ export default function AIIntelligencePanel() {
       setFeedback(prev => ({ ...prev, [predId]: accurate }))
       setFeedbackMsg(accurate ? '✓ Marked accurate — thank you' : '✓ Marked inaccurate — helps improve the model')
       setTimeout(() => setFeedbackMsg(''), 3000)
-    } catch { /* silent */ }
+    } catch (e: unknown) {
+      // Swallowing this left the buttons looking untouched, so an operator had
+      // no way to tell their assessment had not been recorded.
+      setErrorMsg(apiErrorMessage(e, 'Could not record your feedback.'))
+    }
   }
 
   const toggleExpand = (id: string) =>
@@ -206,6 +216,35 @@ export default function AIIntelligencePanel() {
         </div>
       )}
 
+      {/* Expired-run banner. Predictions are valid for 24h; a run older than
+          that is still shown (an analyst needs to see the last assessment) but
+          must never be presented as the current picture. */}
+      {stale && hasData && !inProgress && (
+        <div style={{
+          background: '#431407', border: '1px solid #f9731633',
+          borderRadius: '8px', padding: '12px 16px',
+          display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+        }}>
+          <Clock style={{ width: 16, height: 16, color: '#fdba74', flexShrink: 0 }} />
+          <span style={{ fontSize: '13px', color: '#fed7aa' }}>
+            These predictions expired{validUntil ? ` ${formatDistanceToNow(new Date(validUntil), { addSuffix: true })}` : ''} and
+            no longer reflect current conditions. Run a new analysis to refresh them.
+          </span>
+          <button
+            onClick={() => runAnalysis(true)}
+            disabled={analyzing}
+            style={{
+              marginLeft: 'auto', background: '#7c2d12', color: '#fed7aa',
+              border: '1px solid #f9731644', borderRadius: '6px',
+              padding: '6px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600,
+              opacity: analyzing ? 0.6 : 1,
+            }}
+          >
+            Re-run now
+          </button>
+        </div>
+      )}
+
       {/* In-progress banner */}
       {inProgress && !analyzing && (
         <div style={{
@@ -254,7 +293,27 @@ export default function AIIntelligencePanel() {
           background: '#0f172a', border: '1px dashed #334155', borderRadius: '12px',
         }}>
           <Brain style={{ width: 48, height: 48, color: '#334155', margin: '0 auto 16px' }} />
-          <div style={{ fontSize: '16px', fontWeight: 700, color: '#94a3b8', marginBottom: '8px' }}>No Predictions Yet</div>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: '#94a3b8', marginBottom: '8px' }}>
+            {lastFailure ? 'Last Analysis Did Not Complete' : 'No Predictions Yet'}
+          </div>
+          {/* A failed run recorded a reason. Showing only "No Predictions Yet"
+              made an analysis that had genuinely run and failed look like one
+              that had simply never been started. */}
+          {lastFailure?.error_message && (
+            <p style={{
+              fontSize: '12px', color: '#fca5a5', maxWidth: '420px',
+              margin: '0 auto 12px', lineHeight: 1.6,
+              background: '#450a0a', border: '1px solid #ef444433',
+              borderRadius: '8px', padding: '8px 12px',
+            }}>
+              {lastFailure.error_message}
+              {lastFailure.created_at && (
+                <span style={{ display: 'block', color: '#94a3b8', fontSize: '10px', marginTop: 4 }}>
+                  {formatDistanceToNow(new Date(lastFailure.created_at), { addSuffix: true })}
+                </span>
+              )}
+            </p>
+          )}
           <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '420px', margin: '0 auto 20px', lineHeight: 1.6 }}>
             Run the AI Analysis to generate crime hotspot predictions, patrol recommendations, and risk assessments based on 90 days of field data.
           </p>
@@ -659,7 +718,11 @@ export default function AIIntelligencePanel() {
               <span style={{ fontSize: '11px', color: '#475569' }}>
                 Analysis run <strong style={{ color: '#64748b' }}>{format(new Date(run.created_at), 'dd MMM yyyy HH:mm')}</strong>
                 {' · '}{run.total_incidents_analyzed} incidents · {predictions.length} hotspot zones
-                {' · '}<span style={{ color: '#6366f1' }}>claude-sonnet-4-6</span>
+                {/* This was the literal string "claude-sonnet-4-6" regardless of
+                    what actually ran. The run record stores the real model. */}
+                {(run.claude_model ?? run.model_version) && (
+                  <>{' · '}<span style={{ color: '#6366f1' }}>{run.claude_model ?? run.model_version}</span></>
+                )}
               </span>
               <span style={{ marginLeft: 'auto', fontSize: '10px', color: '#334155' }}>
                 Predictions valid for 24h · Submit feedback to improve accuracy
