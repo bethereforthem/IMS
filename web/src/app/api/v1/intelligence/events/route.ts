@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError, getPagination } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
-import type { AuthPayload } from '@/lib/rbac'
+import { allowedClearances, type AuthPayload } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/intelligence/events
@@ -20,16 +20,33 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
     const officer_id = url.searchParams.get('officer_id')
     const suspect_id = url.searchParams.get('suspect_id')
     const institution = url.searchParams.get('institution')
+    const search = (url.searchParams.get('q') ?? '').trim()
+    // Chronology is the point of this feed, so only time-like columns and
+    // confidence are sortable; anything else falls back to the event time.
+    const sortParam = url.searchParams.get('sort') ?? 'event_timestamp'
+    const sort = ['event_timestamp', 'created_at', 'confidence'].includes(sortParam)
+      ? sortParam : 'event_timestamp'
+    const ascending = url.searchParams.get('order') === 'asc'
 
-    const { pageSize, offset } = getPagination(req)
+    const { page, pageSize, offset } = getPagination(req)
     const rawLimit = parseInt(url.searchParams.get('limit') ?? String(pageSize), 10)
     const limit = Math.min(100, Math.max(1, rawLimit))
 
+    // A subject search has to reach the joined suspect row, and an embedded
+    // filter only narrows the parent when the join is `!inner`.
+    const suspectJoin = search
+      ? 'suspects!inner(full_name, ims_reference, status, threat_level)'
+      : 'suspects(full_name, ims_reference, status, threat_level)'
+
     let query = supabase
       .from('intelligence_events')
-      .select('*, suspects(full_name, ims_reference, status, threat_level)', { count: 'exact' })
-      .order('event_timestamp', { ascending: false })
+      .select(`*, ${suspectJoin}`, { count: 'exact' })
+      .order(sort, { ascending, nullsFirst: false })
       .range(offset, offset + limit - 1)
+      // Never return an event classified above the caller's own clearance.
+      // Without this an RNP_PATROL officer holding UNCLASSIFIED read every
+      // TOP_SECRET event in the table.
+      .in('classification', allowedClearances(user.clearance))
 
     if (source_tag) query = query.eq('source_tag', source_tag)
     if (criminal_record_found !== null) {
@@ -47,6 +64,17 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
     if (officer_id) query = query.eq('officer_id', officer_id)
     if (suspect_id) query = query.eq('suspect_id', suspect_id)
     if (institution) query = query.eq('institution', institution)
+    if (search) {
+      // Commas and parentheses terminate a PostgREST filter list — strip them
+      // so a search box cannot append predicates of its own.
+      const safe = search.replace(/[,()*]/g, ' ').trim()
+      if (safe) {
+        query = query.or(
+          `full_name.ilike.%${safe}%,ims_reference.ilike.%${safe}%`,
+          { referencedTable: 'suspects' }
+        )
+      }
+    }
 
     const { data: events, count, error } = await query
 
@@ -66,7 +94,7 @@ export const GET = withAuth(async (req: NextRequest, { user }: { user: AuthPaylo
       created_at: e.event_timestamp ?? e.created_at,
     }))
 
-    return apiSuccess({ events: mappedEvents, total: count ?? 0 })
+    return apiSuccess({ events: mappedEvents, total: count ?? 0, page, page_size: limit })
   } catch (err) {
     console.error('[intelligence/events GET]', err)
     return apiError('Internal server error', 500)
@@ -168,4 +196,11 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     console.error('[intelligence/events POST]', err)
     return apiError('Internal server error', 500)
   }
-}, 'source_attribution:read')
+  // This was gated on `source_attribution:read` — a read permission
+  // authorising a write. Every role that could view the intelligence feed could
+  // therefore inject events into it, and because a NID_SCAN/FACE_SCAN event
+  // with `criminal_record_found` auto-raises a CRITICAL broadcast alert, could
+  // raise a system-wide alert too. RIB_ANALYST is deliberately not in the new
+  // set: the Analysis Unit dashboard states analyst access is read-only, and
+  // nothing in the client posts to this route.
+}, 'intel:events:write')
