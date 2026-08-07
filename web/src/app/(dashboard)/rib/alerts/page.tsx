@@ -3,12 +3,13 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { StatCard } from '@/components/shared/StatCard'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
-import { alertsApi } from '@/lib/api'
+import { alertsApi, apiErrorMessage } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import clsx from 'clsx'
 import {
   AlertTriangle, AlertCircle, Info, Bell, BellOff,
   ShieldAlert, ToggleLeft, ToggleRight, CheckCircle2, X,
+  Search, Loader2, Check,
 } from 'lucide-react'
 import type { AlertSeverity, Alert } from '@/types'
 import {
@@ -38,17 +39,21 @@ export default function RIBAlertsPage() {
   const { user } = useAuth()
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL')
   const [actionOnly, setActionOnly] = useState(false)
+  const [search, setSearch] = useState('')
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [readState, setReadState] = useState<Record<string, boolean>>({})
   const [newBanner, setNewBanner] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [acking, setAcking] = useState<Record<string, boolean>>({})
 
   const seenIdsRef     = useRef<Set<string>>(new Set())
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchAlerts = useCallback(() => {
-    alertsApi.list({ limit: 200 }).then(r => {
-      if (!r.data?.alerts?.length) return
-      const fetched: Alert[] = r.data.alerts
+    return alertsApi.list({ limit: 200 }).then(r => {
+      // An empty result is a real state — returning early here left the
+      // previous list on screen and made a genuinely empty feed look stale.
+      const fetched: Alert[] = r.data?.alerts ?? []
       const newIds = fetched.filter(a => !seenIdsRef.current.has(a.id))
       if (newIds.length > 0 && seenIdsRef.current.size > 0) {
         setNewBanner(newIds.length)
@@ -57,12 +62,11 @@ export default function RIBAlertsPage() {
       }
       fetched.forEach(a => seenIdsRef.current.add(a.id))
       setAlerts(fetched)
-      setReadState(prev => {
-        const next = { ...prev }
-        fetched.forEach((a: Alert) => { if (!(a.id in next)) next[a.id] = a.is_read })
-        return next
-      })
-    }).catch(() => {})
+      setError(null)
+    }).catch(err => {
+      // A failed fetch used to be swallowed and rendered as "no alerts".
+      setError(apiErrorMessage(err, 'Could not load alerts.'))
+    }).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -71,20 +75,47 @@ export default function RIBAlertsPage() {
     return () => { clearInterval(id); if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current) }
   }, [fetchAlerts])
 
-  const toggleRead = (id: string, e: React.MouseEvent) => {
+  /**
+   * Acknowledge an alert.
+   *
+   * This used to flip a piece of component state and nothing else: the alert
+   * stayed unread in the database, reverted on the next 30-second poll, and no
+   * other analyst ever saw that it had been actioned. `is_read` is one-way on
+   * the server — it also records who read it and when, and writes an
+   * ALERT_ACKNOWLEDGED audit entry — so there is no "mark unread" to offer.
+   */
+  const acknowledge = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setReadState(prev => ({ ...prev, [id]: !prev[id] }))
+    setAcking(s => ({ ...s, [id]: true }))
+    setAlerts(prev => prev.map(a => (a.id === id ? { ...a, is_read: true } : a)))
+    try {
+      await alertsApi.markRead(id)
+      await fetchAlerts()
+    } catch (err) {
+      // Roll back — an acknowledgement that never reached the database must
+      // not be shown as one that did.
+      setAlerts(prev => prev.map(a => (a.id === id ? { ...a, is_read: false } : a)))
+      setError(apiErrorMessage(err, 'Could not acknowledge the alert.'))
+    } finally {
+      setAcking(s => { const next = { ...s }; delete next[id]; return next })
+    }
   }
 
+  const q = search.trim().toLowerCase()
   const filtered = alerts.filter(a => {
     const matchesSeverity = severityFilter === 'ALL' || a.severity === severityFilter
     const matchesAction   = !actionOnly || a.requires_action
-    return matchesSeverity && matchesAction
+    const matchesSearch   = !q ||
+      a.title.toLowerCase().includes(q) ||
+      a.message.toLowerCase().includes(q) ||
+      (a.suspect_name ?? '').toLowerCase().includes(q)
+    return matchesSeverity && matchesAction && matchesSearch
   })
 
   const criticalCount       = alerts.filter(a => a.severity === 'CRITICAL').length
-  const unreadCount         = alerts.filter(a => !readState[a.id]).length
+  const unreadCount         = alerts.filter(a => !a.is_read).length
   const actionRequiredCount = alerts.filter(a => a.requires_action).length
+  const canAcknowledge      = ['RIB_ANALYST', 'RIB_INVESTIGATOR'].includes(user?.role ?? '')
 
   return (
     <div className="space-y-6">
@@ -139,6 +170,15 @@ export default function RIBAlertsPage() {
             </button>
           ))}
         </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search title, message or suspect…"
+            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-rib/50"
+          />
+        </div>
         <div className="flex items-center justify-between">
           <button
             onClick={() => setActionOnly(v => !v)}
@@ -151,22 +191,35 @@ export default function RIBAlertsPage() {
             Action Required Only
           </button>
           <span className="text-xs text-slate-500 bg-slate-800 px-2.5 py-1 rounded-full">
-            {filtered.length} alert{filtered.length !== 1 ? 's' : ''}
+            {loading ? 'Loading…' : `${filtered.length} of ${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`}
           </span>
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => { setLoading(true); fetchAlerts() }} className="ml-auto text-xs underline hover:text-red-100">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Alert list */}
       <div className="space-y-3">
-        {filtered.length === 0 && (
+        {loading && Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-28 rounded-xl bg-slate-900 border border-slate-800 animate-pulse" />
+        ))}
+        {!loading && !error && filtered.length === 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-10 text-center text-slate-500 text-sm">
             <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            No alerts match your filters.
+            {alerts.length === 0 ? 'No alerts have been raised for RIB.' : 'No alerts match your filters.'}
           </div>
         )}
-        {filtered.map(alert => {
+        {!loading && filtered.map(alert => {
           const SeverityIcon = SEVERITY_ICON[alert.severity]
-          const isRead       = readState[alert.id]
+          const isRead       = alert.is_read
           const srcInst      = alertSourceInstitution(alert)
           const fwdFrom      = parseForwardedFrom(alert.title)
           const cleanedTitle = stripFwdPrefix(alert.title)
@@ -218,18 +271,25 @@ export default function RIBAlertsPage() {
 
               {/* Right side */}
               <div className="shrink-0 flex flex-col items-end gap-2">
-                <button
-                  onClick={e => toggleRead(alert.id, e)}
-                  title={isRead ? 'Mark as unread' : 'Mark as read'}
-                  className={clsx(
-                    'text-[10px] font-semibold px-2 py-0.5 rounded border transition-colors',
-                    isRead
-                      ? 'border-slate-700 text-slate-600 hover:text-slate-400'
-                      : 'border-rib/30 text-rib hover:bg-rib/10'
-                  )}
-                >
-                  {isRead ? 'Mark Unread' : 'Mark Read'}
-                </button>
+                {isRead ? (
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-green-500">
+                    <Check className="h-3 w-3" /> Acknowledged
+                  </span>
+                ) : canAcknowledge ? (
+                  <button
+                    onClick={e => acknowledge(alert.id, e)}
+                    disabled={acking[alert.id]}
+                    title="Acknowledge this alert"
+                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border border-rib/30 text-rib hover:bg-rib/10 transition-colors disabled:opacity-50"
+                  >
+                    {acking[alert.id]
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <Check className="h-3 w-3" />}
+                    Acknowledge
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-slate-600">Unread</span>
+                )}
                 <div className="text-right">
                   <p className="text-[10px] text-slate-500 whitespace-nowrap">
                     {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
