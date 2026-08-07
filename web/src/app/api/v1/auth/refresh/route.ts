@@ -4,6 +4,8 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { verifyToken, signToken } from '@/lib/jwt'
 import { logAudit } from '@/lib/audit'
 import { apiError } from '@/lib/api-middleware'
+import { institutionForRole } from '@/lib/rbac'
+import { checkLoginAllowed } from '@/lib/access-enforcement'
 import type { TokenResponse } from '@/types'
 
 export const runtime = 'nodejs'
@@ -75,6 +77,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (!user.active || user.locked) {
     return apiError('Account is inactive or locked', 403)
+  }
+
+  // Refresh mints a brand-new session, so it has to respect an administrative
+  // lockdown too — otherwise a locked institution could keep rotating tokens
+  // indefinitely from a refresh token it already held.
+  const lockout = await checkLoginAllowed(
+    user.role as string,
+    (user.institution as string) ?? institutionForRole(user.role as string),
+  )
+  if (lockout) {
+    return apiError(lockout.message, lockout.status)
   }
 
   // 4. Revoke the old session (rotation — one-use refresh tokens)
