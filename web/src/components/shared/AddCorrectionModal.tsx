@@ -1,8 +1,15 @@
 'use client'
 import { useState, useRef } from 'react'
 import { X, Shield, Loader2, Search, User, Building2, Gavel } from 'lucide-react'
-import { correctionsApi, suspectsApi } from '@/lib/api'
+import { correctionsApi, suspectsApi, apiErrorMessage } from '@/lib/api'
+import { useFacilities } from '@/hooks/useFacilities'
 import type { Suspect } from '@/types'
+import LocationSelector from '@/components/shared/LocationSelector'
+import {
+  composeRwAddress, rwLocationFromFields,
+  RW_FIELDS_DOMICILE as DOM_FIELDS,
+  RW_FIELDS_RESIDENTIAL as RES_FIELDS,
+} from '@/lib/rw-locations'
 
 interface Props {
   onClose: () => void
@@ -23,6 +30,8 @@ const TABS: { id: Tab; label: string; icon: typeof User }[] = [
 
 export function AddCorrectionModal({ onClose, onSuccess }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('personal')
+  const { facilities } = useFacilities()
+  const [warning, setWarning] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     // Personal
@@ -41,8 +50,12 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
     children_count: '',
     health_status: '',
     properties_owned: '',
-    residential_address: '',
-    domicile_address: '',
+    // Full administrative chain + a free-text detail line; recombined into the
+    // single address strings the corrections API stores. See composeAddress.
+    res_province: '', res_district: '', res_sector: '', res_cell: '', res_village: '',
+    res_detail: '',
+    dom_province: '', dom_district: '', dom_sector: '', dom_cell: '', dom_village: '',
+    dom_detail: '',
     phone_number: '',
     email: '',
     alternative_contact: '',
@@ -108,8 +121,9 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
     if (!suspect || !form.facility_name.trim()) return
     setSubmitting(true)
     setError(null)
+    setWarning(null)
     try {
-      await correctionsApi.create({
+      const created = await correctionsApi.create({
         suspect_id: suspect.id,
         // Custody
         facility_name: form.facility_name.trim(),
@@ -132,8 +146,12 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
         children_count: form.children_count ? parseInt(form.children_count) : undefined,
         health_status: form.health_status.trim() || undefined,
         properties_owned: form.properties_owned.trim() || undefined,
-        residential_address: form.residential_address.trim() || undefined,
-        domicile_address: form.domicile_address.trim() || undefined,
+        residential_address: composeRwAddress(form, RES_FIELDS, 'res_detail') || undefined,
+        domicile_address: composeRwAddress(form, DOM_FIELDS, 'dom_detail') || undefined,
+        // Structured chains, so the server can re-validate what was picked
+        // rather than trusting the flattened strings above.
+        residence: rwLocationFromFields(form, RES_FIELDS),
+        domicile: rwLocationFromFields(form, DOM_FIELDS),
         phone_number: form.phone_number.trim() || undefined,
         email: form.email.trim() || undefined,
         alternative_contact: form.alternative_contact.trim() || undefined,
@@ -147,10 +165,22 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
         offense_description: form.offense_description.trim() || undefined,
         court_conclusion: form.court_conclusion.trim() || undefined,
       })
+
+      // The API reports any field its database could not store rather than
+      // dropping it quietly, so the officer who typed it finds out.
+      const dropped = (created.data as { unsupported_fields?: string[] })?.unsupported_fields
+      if (dropped?.length) {
+        setWarning(
+          `The intake was saved, but ${dropped.length} field(s) could not be stored ` +
+          `(${dropped.join(', ')}). A pending database migration is required.`
+        )
+        // Give the operator time to read it before the modal is dismissed.
+        setTimeout(onSuccess, 6000)
+        return
+      }
       onSuccess()
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } }
-      setError(e.response?.data?.message ?? 'Failed to create custody record.')
+      setError(apiErrorMessage(err, 'Failed to create custody record.'))
     } finally {
       setSubmitting(false)
     }
@@ -341,16 +371,39 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
                   </div>
                 </div>
 
-                <div>
-                  <label className={LABEL}>Residential Address</label>
-                  <input value={form.residential_address} onChange={e => set('residential_address', e.target.value)}
-                    className={INPUT} placeholder="Current residential address" />
+                <div className="space-y-2">
+                  <p className={LABEL}>Residential Address</p>
+                  <LocationSelector
+                    idPrefix="correction-residence"
+                    value={rwLocationFromFields(form, RES_FIELDS)}
+                    fieldNames={RES_FIELDS}
+                    onChange={(_next, patch) => setForm(prev => ({ ...prev, ...patch }))}
+                    classNames={{ label: LABEL, select: SELECT }}
+                  />
+                  <div>
+                    <label className={LABEL} htmlFor="correction-res-detail">House / Street / Landmark</label>
+                    <input id="correction-res-detail" value={form.res_detail}
+                      onChange={e => set('res_detail', e.target.value)}
+                      className={INPUT} placeholder="Plot number, nearest landmark, etc." />
+                  </div>
                 </div>
 
-                <div>
-                  <label className={LABEL}>Domicile Address</label>
-                  <input value={form.domicile_address} onChange={e => set('domicile_address', e.target.value)}
-                    className={INPUT} placeholder="Permanent / home village address" />
+                <div className="space-y-2">
+                  <p className={LABEL}>Domicile Address</p>
+                  <p className="text-[11px] text-slate-500 -mt-1">Permanent / family home village.</p>
+                  <LocationSelector
+                    idPrefix="correction-domicile"
+                    value={rwLocationFromFields(form, DOM_FIELDS)}
+                    fieldNames={DOM_FIELDS}
+                    onChange={(_next, patch) => setForm(prev => ({ ...prev, ...patch }))}
+                    classNames={{ label: LABEL, select: SELECT }}
+                  />
+                  <div>
+                    <label className={LABEL} htmlFor="correction-dom-detail">House / Street / Landmark</label>
+                    <input id="correction-dom-detail" value={form.dom_detail}
+                      onChange={e => set('dom_detail', e.target.value)}
+                      className={INPUT} placeholder="Plot number, nearest landmark, etc." />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -400,16 +453,19 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={LABEL}>Facility *</label>
-                    <select value={form.facility_name} onChange={e => set('facility_name', e.target.value)} className={SELECT} required>
-                      <option value="">Select facility...</option>
-                      <option value="Mageragere">Mageragere Prison</option>
-                      <option value="Nyarugenge">Nyarugenge Prison</option>
-                      <option value="Mpanga">Mpanga Central Prison</option>
-                      <option value="Nyagatare">Nyagatare Prison</option>
-                      <option value="Rwamagana">Rwamagana Prison</option>
-                      <option value="Huye">Huye Prison</option>
-                    </select>
+                    <label className={LABEL} htmlFor="intake-facility">Facility *</label>
+                    <input
+                      id="intake-facility"
+                      list="rcs-facility-options"
+                      value={form.facility_name}
+                      onChange={e => set('facility_name', e.target.value)}
+                      className={INPUT}
+                      placeholder="Start typing, or pick an existing facility"
+                      required
+                    />
+                    <datalist id="rcs-facility-options">
+                      {facilities.map(f => <option key={f} value={f} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label className={LABEL}>Cell Block</label>
@@ -519,6 +575,9 @@ export function AddCorrectionModal({ onClose, onSuccess }: Props) {
           <div className="border-t border-slate-800 px-5 py-4 shrink-0">
             {error && (
               <p className="text-xs text-red-400 bg-red-950/30 border border-red-900 rounded-lg px-3 py-2 mb-3">{error}</p>
+            )}
+            {warning && (
+              <p className="text-xs text-amber-300 bg-amber-950/30 border border-amber-800 rounded-lg px-3 py-2 mb-3">{warning}</p>
             )}
 
             <div className="flex items-center justify-between">
