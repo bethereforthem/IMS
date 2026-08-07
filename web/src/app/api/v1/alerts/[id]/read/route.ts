@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 import type { AuthPayload } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,18 @@ export const PATCH = withAuth(async (req: NextRequest, { user, params }: { user:
       console.error('[alerts/[id]/read PATCH]', error)
       return apiError('Failed to mark alert as read', 500)
     }
+
+    // Acknowledging an alert is the record that an officer saw it. That was
+    // written to `alerts` but never to the audit trail.
+    await logAudit({
+      event_type:  'ALERT_ACKNOWLEDGED',
+      action:      'UPDATE',
+      actor:       user,
+      target_type: 'alert',
+      target_id:   id,
+      after_state: { is_read: true, read_by: user.user_id },
+      context:     extractAuditContext(req),
+    })
 
     return apiSuccess({ message: 'Alert marked as read' })
   } catch (err) {
