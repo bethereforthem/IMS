@@ -4,6 +4,12 @@ import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
 import type { AuthPayload } from '@/lib/rbac'
+import { assertRwLocations } from '@/lib/rw-locations-server'
+import {
+  RW_FIELDS_BIRTHPLACE as POB_FIELDS,
+  RW_FIELDS_DOMICILE as DOM_FIELDS,
+  RW_FIELDS_RESIDENTIAL as RES_FIELDS,
+} from '@/lib/rw-locations'
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/patrol/report
@@ -102,6 +108,7 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       insecurity_type,
       location_lat,
       location_lng,
+      location,
       location_description,
       file_urls,
     } = body as {
@@ -111,12 +118,26 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       insecurity_type?: string
       location_lat?: number | null
       location_lng?: number | null
+      location?: Record<string, unknown>
       location_description?: string
       file_urls?: string[]
     }
 
     if (!insecurity_type || !description) {
       return apiError('insecurity_type and description are required', 400)
+    }
+
+    // Re-validate the administrative chains against the official dataset — the
+    // client cascade is the only thing enforcing them on the way in, and a
+    // village name on its own is ambiguous without its parents.
+    const locationCheck = assertRwLocations([
+      { label: 'Incident location', value: location },
+      { label: 'Place of birth', value: person, fields: POB_FIELDS },
+      { label: 'Residential address', value: person, fields: RES_FIELDS },
+      { label: 'Domicile address', value: person, fields: DOM_FIELDS },
+    ])
+    if (!locationCheck.ok) {
+      return apiError(locationCheck.errors.join('; '), 400)
     }
 
     const profile: PersonProfile = person ?? {}
