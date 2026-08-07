@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { statsApi, intelligenceApi } from '@/lib/api'
+import { statsApi, intelligenceApi, apiErrorMessage } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   LineChart, Line, Legend,
 } from 'recharts'
-import { Activity, AlertTriangle, TrendingUp, Shield, Radio } from 'lucide-react'
+import { Activity, AlertTriangle, TrendingUp, Shield, Radio, RefreshCw } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
 import type { DashboardStats, IntelligenceEvent } from '@/types'
@@ -25,6 +25,9 @@ const SOURCE_LABELS: Record<string, string> = {
   SYSTEM_ALERT:   'System',
 }
 
+/** Events pulled for the source/trend breakdowns below. */
+const ANALYSIS_WINDOW = 100
+
 function SkeletonCard() {
   return <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-24 animate-pulse" />
 }
@@ -32,18 +35,29 @@ function SkeletonCard() {
 export function AnalystDashboard() {
   const { user } = useAuth()
   const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
   const [stats, setStats]       = useState<DashboardStats | null>(null)
   const [events, setEvents]     = useState<IntelligenceEvent[]>([])
+  // The number of events the caller's clearance permits, from the database.
+  // `events.length` is only ever the size of the analysis window below.
+  const [eventTotal, setEventTotal] = useState(0)
+  const [criminalTotal, setCriminalTotal] = useState(0)
 
   const load = useCallback(() => {
     setLoading(true)
+    setError(null)
     Promise.all([
-      statsApi.getDashboard(),
-      intelligenceApi.listEvents({ limit: 100 }),
-    ]).then(([s, e]) => {
-      if (s.data) setStats(s.data)
-      if (e.data?.events?.length) setEvents(e.data.events)
-    }).catch(console.error)
+      statsApi.getDashboard().catch(() => null),
+      intelligenceApi.listEvents({ limit: ANALYSIS_WINDOW }),
+      // One row fetched purely for its `total`: the criminal-hit count has to
+      // come from the database, not from counting the loaded page.
+      intelligenceApi.listEvents({ limit: 1, criminal_record_found: true }),
+    ]).then(([s, e, hits]) => {
+      if (s?.data) setStats(s.data)
+      setEvents(e.data?.events ?? [])
+      setEventTotal(e.data?.total ?? 0)
+      setCriminalTotal(hits.data?.total ?? 0)
+    }).catch(err => setError(apiErrorMessage(err, 'Could not load intelligence data.')))
       .finally(() => setLoading(false))
   }, [])
 
@@ -91,9 +105,12 @@ export function AnalystDashboard() {
     return Object.entries(weeks).map(([week, v]) => ({ week, ...v }))
   })()
 
-  const totalHits   = events.filter(e => e.criminal_record_found).length
-  const hitRate     = events.length > 0 ? (totalHits / events.length) * 100 : 0
+  // Hit rate over the analysed sample; the headline counts come from the
+  // database totals so they do not silently mean "of the first 100 events".
+  const sampleHits  = events.filter(e => e.criminal_record_found).length
+  const hitRate     = eventTotal > 0 ? (criminalTotal / eventTotal) * 100 : 0
   const recordHits  = events.filter(e => e.criminal_record_found).slice(0, 20)
+  const sampled     = events.length < eventTotal
 
   return (
     <div className="space-y-6">
@@ -103,11 +120,29 @@ export function AnalystDashboard() {
           <h1 className="text-xl font-bold text-white">Intelligence Analysis Center</h1>
           <p className="text-sm text-slate-400 mt-0.5">{user?.full_name} · {user?.role?.replace('_', ' ')}</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg">
-          <div className="h-1.5 w-1.5 rounded-full bg-rib animate-pulse" />
-          RIB Analysis Unit
+        <div className="flex items-center gap-3">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:border-slate-500 transition disabled:opacity-50"
+          >
+            <RefreshCw className={clsx('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
+          <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg">
+            <div className="h-1.5 w-1.5 rounded-full bg-rib animate-pulse" />
+            RIB Analysis Unit
+          </div>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={load} className="ml-auto text-xs underline hover:text-red-100">Retry</button>
+        </div>
+      )}
 
       {/* Stats */}
       {loading ? (
@@ -116,9 +151,10 @@ export function AnalystDashboard() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Events Analyzed"  value={events.length}             icon={Activity}      sub="Total in pool" />
-          <StatCard label="Criminal Hits"     value={totalHits}                 icon={Shield}
-            variant={totalHits > 0 ? 'danger' : 'default'} sub="Records matched" />
+          <StatCard label="Events Analyzed"  value={eventTotal}                icon={Activity}
+            sub={sampled ? `Latest ${events.length} charted` : 'All events charted'} />
+          <StatCard label="Criminal Hits"     value={criminalTotal}             icon={Shield}
+            variant={criminalTotal > 0 ? 'danger' : 'default'} sub="Records matched" />
           <StatCard label="Hit Rate"          value={`${hitRate.toFixed(1)}%`}  icon={TrendingUp}
             variant={hitRate > 20 ? 'warn' : 'ok'} sub="Criminal match rate" />
           <StatCard label="Active Alerts"     value={stats?.alerts_today ?? 0} icon={AlertTriangle}
@@ -222,7 +258,7 @@ export function AnalystDashboard() {
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-slate-200">Criminal Record Matches</h2>
-          <span className="text-xs font-semibold text-red-400">{totalHits} total</span>
+          <span className="text-xs font-semibold text-red-400">{sampleHits} in sample · {criminalTotal} total</span>
         </div>
         {loading ? (
           <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => (
@@ -271,9 +307,10 @@ export function AnalystDashboard() {
                 hitRate > 20 ? 'text-red-400' : hitRate > 10 ? 'text-amber-400' : 'text-green-400')}>
                 {hitRate.toFixed(1)}%
               </span>.
-              {totalHits > 0
-                ? ` ${totalHits} subject${totalHits !== 1 ? 's' : ''} with criminal records flagged across ${events.length} events.`
-                : ` No criminal records matched in the current pool of ${events.length} events.`}
+              {criminalTotal > 0
+                ? ` ${criminalTotal} subject${criminalTotal !== 1 ? 's' : ''} with criminal records flagged across ${eventTotal} events.`
+                : ` No criminal records matched in the current pool of ${eventTotal} events.`}
+              {sampled ? ` Source and trend breakdowns are computed from the latest ${events.length} events.` : ''}
               {' '}Analyst access is read-only — escalate actionable intelligence to an RIB Investigator for case action.
             </p>
           </div>
