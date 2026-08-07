@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from './jwt'
 import { PERMISSIONS } from './rbac'
+import { checkAccess } from './access-enforcement'
 import type { AuthPayload } from './rbac'
 
 export type ApiHandler = (
@@ -34,15 +35,45 @@ export interface PaginationResult {
   offset: number
 }
 
-/** Extract page / page_size from query params and compute offset */
+export const MAX_PAGE_SIZE = 200
+const DEFAULT_PAGE_SIZE = 20
+
+/** Parse a positive integer query param, falling back when absent or malformed. */
+function intParam(url: URL, name: string, fallback: number): number {
+  const raw = url.searchParams.get(name)
+  if (raw === null || raw.trim() === '') return fallback
+  const n = Number(raw)
+  // Number('') is 0 and parseInt('12abc') is 12 — neither is a valid page size,
+  // so require a clean integer rather than salvaging whatever prefix parses.
+  if (!Number.isInteger(n)) return fallback
+  return n
+}
+
+/**
+ * Extract page / page_size from query params and compute offset.
+ *
+ * `limit` and `offset` are accepted as aliases. The whole client library sends
+ * `limit`, which this helper used to ignore — so every caller silently received
+ * the 20-row default. That truncated the Wanted Suspects list to 20 of 99 and
+ * made every client-side stat card count a fraction of the table.
+ */
 export function getPagination(req: NextRequest): PaginationResult {
   const url = new URL(req.url)
-  const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10))
-  const pageSize = Math.min(
-    200,
-    Math.max(1, parseInt(url.searchParams.get('page_size') ?? '20', 10))
-  )
-  return { page, pageSize, offset: (page - 1) * pageSize }
+
+  const page = Math.max(1, intParam(url, 'page', 1))
+
+  const requested = url.searchParams.has('page_size')
+    ? intParam(url, 'page_size', DEFAULT_PAGE_SIZE)
+    : intParam(url, 'limit', DEFAULT_PAGE_SIZE)
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requested))
+
+  // An explicit `offset` wins over the page-derived one so cursor-style callers
+  // and page-style callers can share these routes.
+  const offset = url.searchParams.has('offset')
+    ? Math.max(0, intParam(url, 'offset', 0))
+    : (page - 1) * pageSize
+
+  return { page, pageSize, offset }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +137,16 @@ export function withAuth(
         }
       }
 
-      // 6. Delegate to the actual route handler
+      // 6. Session revocation + System Controls lockdowns. A valid signature
+      //    used to be enough on its own, which left every "terminate session"
+      //    and every lock/disable switch in the admin portal with no effect
+      //    until the token expired.
+      const denial = await checkAccess(user, new URL(req.url).pathname)
+      if (denial) {
+        return apiError(denial.message, denial.status)
+      }
+
+      // 7. Delegate to the actual route handler
       // Next.js 15+ passes params as a Promise — await works for both forms
       const routeCtx = ctx as
         | { params?: Record<string, string> | Promise<Record<string, string>> }
