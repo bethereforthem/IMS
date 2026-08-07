@@ -46,9 +46,13 @@ export interface Suspect {
   id: string
   ims_reference: string
   full_name: string
+  /** First alias only — kept for existing callers; prefer `aliases`. */
   alias?: string
+  /** Every recorded alias, straight from the `suspects.aliases` text[] column. */
+  aliases?: string[]
   status: SuspectStatus
-  threat_level: number
+  /** Nullable in the database — not every suspect has been scored. */
+  threat_level: number | null
   nationality: string
   date_of_birth?: string
   physical_description?: string
@@ -91,6 +95,8 @@ export interface Alert {
   suspect_name?: string
   event_id?: string
   is_read: boolean
+  read_by?: string | null
+  read_at?: string | null
   requires_action: boolean
   target_institutions?: string[] | null
   created_at: string
@@ -117,6 +123,60 @@ export interface DashboardStats {
   events_today: number
   camera_nodes_online: number
   camera_nodes_total: number
+}
+
+// ─── RCS / custody ───────────────────────────────────────────────────────────
+
+export interface FacilityStats {
+  facility_name: string
+  total: number
+  in_custody: number
+  pre_trial: number
+  sentenced: number
+}
+
+/** Aggregates over the whole corrections_records table — GET /corrections/stats */
+export interface CustodyStats {
+  total: number
+  in_custody: number
+  pre_trial: number
+  sentenced: number
+  released: number
+  transferred: number
+  escaped: number
+  deceased: number
+  high_threat: number
+  reviews_due: number
+  reviews_overdue: number
+  admissions_recent: number
+  releases_recent: number
+  recent_window_days: number
+  review_window_days: number
+  avg_sentence_years: number | null
+  by_status: Record<string, number>
+  by_threat: Record<string, number>
+  by_facility: FacilityStats[]
+  monthly: { month: string; intake: number; releases: number }[]
+}
+
+export type CustodyEventType =
+  | 'INTAKE' | 'RELEASE' | 'REVIEW' | 'INCIDENT' | 'TRANSFER' | 'RECORD_UPDATE'
+
+export interface CustodyEvent {
+  id: string
+  event_type: CustodyEventType
+  occurred_at: string
+  description: string
+  status: 'COMPLETED' | 'SCHEDULED' | 'OVERDUE'
+  correction_id: string | null
+  inmate_name: string | null
+  ims_reference: string | null
+  facility: string | null
+  cell_block: string | null
+  custody_status: string | null
+  officer_name: string | null
+  officer_badge: string | null
+  officer_institution: string | null
 }
 
 export interface Case {
