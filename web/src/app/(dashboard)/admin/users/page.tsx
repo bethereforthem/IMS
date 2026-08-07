@@ -34,15 +34,22 @@ export default function AdminUsersPage() {
   const [working,   setWorking]   = useState(false)
   const [msg,       setMsg]       = useState('')
 
-  const load = useCallback(() => {
+  const load = useCallback(async (): Promise<AdminUser[]> => {
     setLoading(true)
-    adminPortalApi.listUsers()
-      .then(r => setUsers(r.data?.users ?? []))
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    try {
+      const r = await adminPortalApi.listUsers()
+      const list = r.data?.users ?? []
+      setUsers(list)
+      return list
+    } catch (e) {
+      console.error(e)
+      return []
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   const filtered = users.filter(u =>
     !search ||
@@ -52,11 +59,32 @@ export default function AdminUsersPage() {
     u.institution.toLowerCase().includes(search.toLowerCase())
   )
 
-  const act = async (fn: () => Promise<unknown>, successMsg: string) => {
+  /**
+   * `detail` lets an action refine its success message with something the
+   * server reported back — e.g. how many sessions were actually terminated.
+   */
+  const act = async (
+    fn: () => Promise<unknown>,
+    successMsg: string,
+    detail?: (result: number) => string,
+  ) => {
     setWorking(true); setMsg('')
-    try { await fn(); setMsg(successMsg); load() }
-    catch (e: unknown) { setMsg(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`) }
-    finally { setWorking(false) }
+    try {
+      const result = await fn()
+      setMsg(detail && typeof result === 'number' ? detail(result) : successMsg)
+      // Re-point `selected` at the refreshed record. It used to keep the
+      // snapshot taken when the row was clicked, so after disabling a user the
+      // panel still showed them as active and left the wrong buttons enabled.
+      const refreshed = await load()
+      setSelected(prev => (prev ? refreshed.find(u => u.id === prev.id) ?? prev : prev))
+    } catch (e: unknown) {
+      // Axios reports "Request failed with status code 403" — surface what the
+      // server actually said instead.
+      const detail = (e as { response?: { data?: { error?: string; message?: string } } })?.response?.data
+      setMsg(`Error: ${detail?.error ?? detail?.message ?? (e instanceof Error ? e.message : 'Unknown error')}`)
+    } finally {
+      setWorking(false)
+    }
   }
 
   return (
@@ -178,7 +206,14 @@ export default function AdminUsersPage() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   disabled={working || !selected.active}
-                  onClick={() => act(() => adminPortalApi.updateUser(selected.id, { active: false }), 'User disabled')}
+                  onClick={() => act(
+                    async () => {
+                      const r = await adminPortalApi.updateUser(selected.id, { active: false })
+                      return r.data?.sessions_revoked ?? 0
+                    },
+                    'User disabled',
+                    n => `User disabled · ${n} live session${n === 1 ? '' : 's'} terminated`,
+                  )}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '5px',
                     background: '#450a0a', color: '#fca5a5', border: '1px solid #ef444433',
@@ -231,7 +266,16 @@ export default function AdminUsersPage() {
                 </select>
                 <button
                   disabled={working || roleEdit === selected.role}
-                  onClick={() => act(() => adminPortalApi.changeRole(selected.id, roleEdit), `Role changed to ${roleEdit}`)}
+                  onClick={() => act(
+                    async () => {
+                      const r = await adminPortalApi.changeRole(selected.id, roleEdit)
+                      return r.data?.unchanged ? -1 : (r.data?.sessions_revoked ?? 0)
+                    },
+                    `Role changed to ${roleEdit}`,
+                    n => n < 0
+                      ? `User is already ${roleEdit} — no change made`
+                      : `Role changed to ${roleEdit} · ${n} live session${n === 1 ? '' : 's'} terminated`,
+                  )}
                   style={{
                     background: '#1e3a5f', color: '#93c5fd', border: '1px solid #3b82f633',
                     borderRadius: '5px', padding: '6px 12px', fontSize: '11px', cursor: 'pointer',
