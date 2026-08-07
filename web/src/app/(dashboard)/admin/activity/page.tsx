@@ -112,6 +112,8 @@ function onlineMinutes(createdAt: string): number {
 
 export default function AdminActivityPage() {
   const [sessions,     setSessions]     = useState<AdminSession[]>([])
+  // Real live-session total from the server; the list itself is capped at 200.
+  const [sessionTotal, setSessionTotal] = useState(0)
   const [loading,      setLoading]      = useState(true)
   const [lastRefresh,  setLastRefresh]  = useState<Date | null>(null)
   const [countdown,    setCountdown]    = useState(10)
@@ -137,6 +139,7 @@ export default function AdminActivityPage() {
     try {
       const r = await adminPortalApi.getSessions({ limit: 200 })
       setSessions(r.data?.sessions ?? [])
+      setSessionTotal(r.data?.count ?? r.data?.sessions?.length ?? 0)
       setLastRefresh(new Date())
       setCountdown(10)
     } catch (e) { console.error(e) }
@@ -153,8 +156,11 @@ export default function AdminActivityPage() {
     }
   }, [load])
 
+  // Always re-read on expand. This panel shows page visits and login attempts
+  // on a screen that refreshes every 10 s — serving it from a first-open cache
+  // meant re-opening a row showed activity frozen at whenever it was first
+  // viewed. Any cached copy stays on screen while the refresh is in flight.
   const loadDetail = useCallback(async (userId: string) => {
-    if (userDetails[userId]) return
     setLoadingDetail(userId)
     try {
       const r = await adminPortalApi.getUser(userId)
@@ -169,7 +175,7 @@ export default function AdminActivityPage() {
       }))
     } catch (e) { console.error(e) }
     finally { setLoadingDetail(null) }
-  }, [userDetails])
+  }, [])
 
   const handleExpand = (s: AdminSession) => {
     if (expandedId === s.id) { setExpandedId(null); return }
@@ -245,7 +251,7 @@ export default function AdminActivityPage() {
       {/* ── Summary cards ───────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
         {[
-          { label: 'Active Sessions',   value: sessions.length,       color: '#3b82f6', icon: Monitor },
+          { label: 'Active Sessions',   value: sessionTotal,          color: '#3b82f6', icon: Monitor },
           { label: 'Suspicious',        value: suspicious,             color: suspicious > 0 ? '#ef4444' : '#22c55e', icon: ShieldAlert },
           { label: 'Outside Rwanda',    value: outsideRw.length,      color: outsideRw.length > 0 ? '#ef4444' : '#22c55e', icon: Globe },
           { label: 'VPN / Proxy',       value: vpnProxy.length,       color: vpnProxy.length > 0 ? '#f97316' : '#22c55e', icon: Shield },
@@ -469,12 +475,17 @@ export default function AdminActivityPage() {
                     </div>
 
                     <div style={{ padding: '14px 16px' }}>
-                      {loadingDetail === s.user_id ? (
+                      {loadingDetail === s.user_id && !detail ? (
                         <div style={{ color: '#64748b', fontSize: '12px' }}>Loading user history…</div>
                       ) : !detail ? (
                         <div style={{ color: '#64748b', fontSize: '12px' }}>No data available</div>
                       ) : (
                         <>
+                          {loadingDetail === s.user_id && (
+                            <div style={{ color: '#3b82f6', fontSize: '10px', marginBottom: '8px' }}>
+                              Refreshing…
+                            </div>
+                          )}
                           {/* Page Visits */}
                           {tab === 'visits' && (
                             <div>
