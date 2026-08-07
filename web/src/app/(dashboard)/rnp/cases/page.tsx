@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { casesApi } from '@/lib/api'
+import { casesApi, apiErrorMessage } from '@/lib/api'
 import { CaseDetailModal } from '@/components/shared/CaseDetailModal'
 import { formatDistanceToNow } from 'date-fns'
 import { Briefcase, Search, Scale, CheckCircle, Clock, FolderOpen, ExternalLink } from 'lucide-react'
@@ -46,11 +46,27 @@ export default function RNPCasesPage() {
   const [institutionFilter, setInstitutionFilter] = useState<InstitutionFilter>('ALL')
   const [cases, setCases] = useState<Case[]>([])
   const [openCaseId, setOpenCaseId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    casesApi.list({ limit: 100 }).then((r) => {
-      if (r.data?.cases?.length) setCases(r.data.cases)
-    }).catch(() => {})
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    casesApi.list({ limit: 200 })
+      .then((r) => {
+        if (cancelled) return
+        setCases(r.data?.cases ?? [])
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // RNP_PATROL has no `cases:read`. Silently discarding the 403 left an
+        // empty page that was indistinguishable from "there are no cases".
+        setError(apiErrorMessage(e, 'Could not load cases.'))
+        setCases([])
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   const filtered = cases.filter((c) => {
@@ -160,10 +176,24 @@ export default function RNPCasesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-600" aria-busy="true">
+                    Loading cases…
+                  </td>
+                </tr>
+              )}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-sm text-red-300">{error}</td>
+                </tr>
+              )}
+              {!loading && !error && filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-600">
-                    No cases match the current filters.
+                    {cases.length === 0
+                      ? 'No cases are on record at your clearance level.'
+                      : 'No cases match the current filters.'}
                   </td>
                 </tr>
               )}
