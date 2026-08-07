@@ -19,7 +19,7 @@ export default function NISSCamerasPage() {
 
   useEffect(() => {
     cameraApi.list().then((r) => {
-      if (r.data?.length) setCameras(r.data)
+      if (Array.isArray(r.data)) setCameras(r.data)
     }).catch(() => {})
   }, [])
 
