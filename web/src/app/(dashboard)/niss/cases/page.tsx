@@ -46,7 +46,7 @@ export default function NISSCasesPage() {
 
   useEffect(() => {
     casesApi.list({ limit: 100 }).then((r) => {
-      if (r.data?.cases?.length) setCases(r.data.cases)
+      if (Array.isArray(r.data?.cases)) setCases(r.data.cases)
     }).catch(() => {})
   }, [])
 
