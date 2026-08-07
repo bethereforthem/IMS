@@ -81,7 +81,7 @@ export default function RDFSuspectsPage() {
       return true
     })
     if (prioritySort) {
-      result = [...result].sort((a, b) => b.threat_level - a.threat_level)
+      result = [...result].sort((a, b) => (b.threat_level ?? 0) - (a.threat_level ?? 0))
     }
     return result
   }, [search, statusFilter, prioritySort])
@@ -209,7 +209,7 @@ export default function RDFSuspectsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <ThreatDots level={s.threat_level} />
+                      <ThreatDots level={s.threat_level ?? 0} />
                     </td>
                     <td className="px-4 py-3">
                       <span className={clsx(
