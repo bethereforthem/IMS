@@ -27,21 +27,53 @@ interface WarrantRow {
   charge: string
   issuing_court: string
   issued: string
-  expires: string
+  /** `warrants.expires_at` is nullable — an open-ended warrant has no expiry. */
+  expires: string | null
   priority: string
+  warrant_type: string
+  /** The `active` flag as stored, kept separate from the derived status. */
+  active: boolean
   status: 'ACTIVE' | 'EXPIRED'
 }
 
-const TODAY = new Date()
+const EXPIRING_SOON_DAYS = 30
 
-function isExpiringSoon(expiresStr: string): boolean {
-  const exp = new Date(expiresStr)
-  const daysLeft = differenceInDays(exp, TODAY)
-  return daysLeft >= 0 && daysLeft <= 30
+/** A date that is present and parseable, or null. */
+function parseDate(value: string | null): Date | null {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
-function isExpired(expiresStr: string): boolean {
-  return isPast(new Date(expiresStr)) && new Date(expiresStr) < TODAY
+/**
+ * Whether the expiry date itself has passed.
+ *
+ * This used to be `isPast(d) && d < TODAY` — the same comparison twice — against
+ * a `TODAY` captured once when the module loaded, so a tab left open overnight
+ * kept measuring against yesterday. It also received `''` for the null expiry
+ * every warrant in the database actually has, which produced an Invalid Date.
+ */
+function isExpired(expires: string | null): boolean {
+  const d = parseDate(expires)
+  return d !== null && isPast(d)
+}
+
+function isExpiringSoon(expires: string | null): boolean {
+  const d = parseDate(expires)
+  if (d === null) return false
+  const daysLeft = differenceInDays(d, new Date())
+  return daysLeft >= 0 && daysLeft <= EXPIRING_SOON_DAYS
+}
+
+function daysUntil(expires: string | null): number | null {
+  const d = parseDate(expires)
+  return d === null ? null : differenceInDays(d, new Date())
+}
+
+/** Format a stored timestamp, without throwing on a missing or malformed one. */
+function formatDate(value: string | null): string {
+  const d = parseDate(value)
+  return d === null ? '—' : format(d, 'dd MMM yyyy')
 }
 
 export default function WarrantsPage() {
@@ -49,25 +81,52 @@ export default function WarrantsPage() {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('ALL')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE')
   const [warrants, setWarrants] = useState<WarrantRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    warrantsApi.list({ active: true, limit: 100 }).then(r => {
-      if (r.data?.warrants?.length) {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    // Every warrant, not just the active ones. Requesting `active: true` while
+    // offering an "Expired" filter and an "Expired" stat card meant both were
+    // permanently empty — the rows they counted were excluded server-side.
+    warrantsApi.list({ limit: 200 })
+      .then(r => {
+        if (cancelled) return
         setWarrants(
-          r.data.warrants.map((w: Record<string, unknown>): WarrantRow => ({
-            id: String(w.id),
-            reference: String(w.case_reference ?? `WRT-${String(w.id).slice(0, 8).toUpperCase()}`),
-            suspect: String((w.suspects as Record<string, unknown>)?.full_name ?? 'Unknown'),
-            charge: String(w.charges ?? ''),
-            issued: String(w.issued_at ?? ''),
-            expires: String(w.expires_at ?? ''),
-            issuing_court: String(w.issued_by_court ?? w.issued_by ?? ''),
-            priority: String(w.priority ?? 'MEDIUM'),
-            status: w.active ? 'ACTIVE' : 'EXPIRED',
-          }))
+          (r.data?.warrants ?? []).map((w: Record<string, unknown>): WarrantRow => {
+            const active = w.active === true
+            const expires = w.expires_at == null ? null : String(w.expires_at)
+            return {
+              id: String(w.id),
+              reference: String(w.case_reference ?? `WRT-${String(w.id).slice(0, 8).toUpperCase()}`),
+              suspect: String((w.suspects as Record<string, unknown>)?.full_name ?? 'Unknown'),
+              charge: String(w.charges ?? ''),
+              issued: String(w.issued_at ?? ''),
+              expires,
+              issuing_court: String(w.issued_by_court ?? w.issued_by ?? ''),
+              // `priority` and `warrant_type` are NOT NULL in the database, so
+              // the previous `?? 'MEDIUM'` / `?? 'HIGH'` defaults never fired —
+              // and disagreed with each other across pages. Read them straight.
+              priority: String(w.priority),
+              warrant_type: String(w.warrant_type),
+              active,
+              // Derived from both signals. Keying status off `active` alone let
+              // a warrant whose expiry date had passed keep showing as ACTIVE.
+              status: active && !isExpired(expires) ? 'ACTIVE' : 'EXPIRED',
+            }
+          })
         )
-      }
-    }).catch(() => {})
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        setError(msg ?? 'Could not load warrants.')
+        setWarrants([])
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   const filtered = warrants.filter(w => {
@@ -162,10 +221,24 @@ export default function WarrantsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-500 text-xs" aria-busy="true">
+                    Loading warrants…
+                  </td>
+                </tr>
+              )}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-red-300 text-xs">{error}</td>
+                </tr>
+              )}
+              {!loading && !error && filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
-                    No warrants match the current filters.
+                    {warrants.length === 0
+                      ? 'No warrants are on record.'
+                      : 'No warrants match the current filters.'}
                   </td>
                 </tr>
               )}
@@ -175,19 +248,29 @@ export default function WarrantsPage() {
 
                 return (
                   <tr key={w.id} className="border-b border-slate-800/50 text-xs hover:bg-slate-800/20">
-                    <td className="py-2.5 font-mono text-rnp whitespace-nowrap">{w.reference}</td>
+                    <td className="py-2.5 font-mono text-rnp whitespace-nowrap">
+                      {w.reference}
+                      {/* warrant_type is a real NOT NULL column (ARREST /
+                          SEARCH / EXTRADITION) that nothing surfaced before. */}
+                      <span className="block text-[10px] font-sans text-slate-500">{w.warrant_type}</span>
+                    </td>
                     <td className="py-2.5 text-slate-200 font-medium whitespace-nowrap">{w.suspect}</td>
                     <td className="py-2.5 text-slate-400">{w.charge}</td>
                     <td className="py-2.5 text-slate-400 hidden md:table-cell whitespace-nowrap">{w.issuing_court}</td>
-                    <td className="py-2.5 text-slate-500 whitespace-nowrap">{format(new Date(w.issued), 'dd MMM yyyy')}</td>
+                    <td className="py-2.5 text-slate-500 whitespace-nowrap">{formatDate(w.issued)}</td>
                     <td className={clsx(
                       'py-2.5 whitespace-nowrap font-medium',
                       expired ? 'text-red-400' : expiringSoon ? 'text-amber-400' : 'text-slate-400'
                     )}>
-                      {format(new Date(w.expires), 'dd MMM yyyy')}
-                      {expiringSoon && (
+                      {/* Every warrant on file has a null expires_at. Formatting
+                          that as a date threw "Invalid time value" and took the
+                          whole page down, so say plainly that there is none. */}
+                      {w.expires === null
+                        ? <span className="text-slate-600 italic">No expiry</span>
+                        : formatDate(w.expires)}
+                      {expiringSoon && daysUntil(w.expires) !== null && (
                         <span className="ml-1 text-[10px] text-amber-400">
-                          ({differenceInDays(new Date(w.expires), TODAY)}d)
+                          ({daysUntil(w.expires)}d)
                         </span>
                       )}
                       {expired && <span className="ml-1 text-[10px] text-red-400">(exp.)</span>}
