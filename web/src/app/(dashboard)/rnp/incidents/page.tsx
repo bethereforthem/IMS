@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { fieldReportsApi, agentTrackingApi, type WebFieldReport, type ActiveAgent } from '@/lib/api'
+import { fieldReportsApi, agentTrackingApi, apiErrorMessage, type WebFieldReport, type ActiveAgent } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   RefreshCw, X, Shield, AlertTriangle, CheckCircle,
@@ -85,8 +85,10 @@ function IncidentModal({
       await fieldReportsApi.assign(report.id, selected, status)
       onAssigned()
       onClose()
-    } catch {
-      setError('Assignment failed — please retry.')
+    } catch (e: unknown) {
+      // Show what the server actually said — a validation or permission failure
+      // is not something "please retry" will resolve.
+      setError(apiErrorMessage(e, 'Assignment failed — please retry.'))
     } finally { setLoading(false) }
   }
 
@@ -348,6 +350,7 @@ export default function RNPIncidentsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [filterStatus, setFilterStatus]     = useState('ALL')
   const [filterPriority, setFilterPriority] = useState('ALL')
+  const [loadError, setLoadError]           = useState('')
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true); else setRefreshing(true)
@@ -357,15 +360,25 @@ export default function RNPIncidentsPage() {
       agentTrackingApi.getActiveAgents(),
     ])
 
+    // allSettled never throws, and the rejected branches were simply not
+    // inspected — so a failing request left the previous data on screen (or an
+    // empty page on first load) with nothing to say anything had gone wrong.
+    const problems: string[] = []
+
     if (rRes.status === 'fulfilled') {
       const all = rRes.value.data?.reports ?? []
       setReports(all.filter(r => r.agent_institution === 'RNP'))
+    } else {
+      problems.push(apiErrorMessage(rRes.reason, 'Could not load field incidents.'))
     }
     if (aRes.status === 'fulfilled') {
       const all = aRes.value.data?.agents ?? []
       setAgents(all.filter(a => a.agent_institution === 'RNP'))
+    } else {
+      problems.push(apiErrorMessage(aRes.reason, 'Could not load active agents.'))
     }
 
+    setLoadError(problems.join(' '))
     setLoading(false)
     setRefreshing(false)
   }, [])
@@ -416,6 +429,18 @@ export default function RNPIncidentsPage() {
           Refresh
         </button>
       </div>
+
+      {loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
+          <span>{loadError}</span>
+          <button
+            onClick={() => load()}
+            className="shrink-0 rounded-lg border border-red-800 px-3 py-1 text-xs font-medium text-red-200 hover:bg-red-950/40"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Stat pills */}
       <div className="flex gap-3 flex-wrap">
