@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { signToken } from '@/lib/jwt'
 import { logAudit } from '@/lib/audit'
 import { institutionForRole } from '@/lib/rbac'
+import { checkLoginAllowed } from '@/lib/access-enforcement'
 
 export const runtime = 'nodejs'
 
@@ -263,6 +264,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
 
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+    }
+
+    // 5b. Administrative lockdowns.
+    //
+    // Checked after the password so a lockdown message is never an oracle for
+    // whether a badge/password pair is valid, and before any session is issued
+    // so a locked institution cannot obtain a token at all. Directors, NISS and
+    // SYSTEM_ADMIN are exempt — otherwise a lockdown could not be lifted.
+    const lockout = await checkLoginAllowed(user.role as string, institution)
+    if (lockout) {
+      await db.from('login_attempts').insert({
+        user_id: user.id, badge_number,
+        success: false,
+        ip_address: rawIp || null,
+        user_agent: userAgentRaw || null,
+        ...ua, ...geo,
+        failure_reason: 'ADMIN_LOCKDOWN',
+        full_name: user.full_name, institution, role: user.role,
+      }).then(({ error: e }) => { if (e) console.error('[login] attempt log:', e.message) })
+
+      await logAudit({
+        event_type: 'AUTH_FAILED',
+        action: 'blocked_by_lockdown',
+        target_type: 'user',
+        target_id: user.id as string,
+        context: { ip_address: rawIp },
+      }).catch(() => {})
+
+      console.log(`[login] BLOCKED by lockdown: ${user.badge_number} (${institution})`)
+      return NextResponse.json({ error: lockout.message }, { status: lockout.status })
     }
 
     // 6. Issue tokens
