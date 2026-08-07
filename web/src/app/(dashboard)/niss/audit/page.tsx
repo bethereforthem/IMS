@@ -6,6 +6,7 @@ import { auditApi } from '@/lib/api'
 import { format } from 'date-fns'
 import { Download, ShieldAlert, Users, Loader2, PlusCircle, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
+import toast from 'react-hot-toast'
 
 interface AuditEntry {
   id: number
@@ -70,6 +71,8 @@ export default function NISSAuditPage() {
       const res = await fetch(`/api/v1/audit?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
+      // Without this the error body is saved as a .csv and looks like an export.
+      if (!res.ok) throw new Error(`Export failed (${res.status})`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -77,7 +80,9 @@ export default function NISSAuditPage() {
       a.download = `audit_log_${new Date().toISOString().split('T')[0]}.csv`
       a.click()
       URL.revokeObjectURL(url)
-    } catch { /* silent */ }
+    } catch {
+      toast.error('Audit export failed. No file was downloaded.')
+    }
     finally { setExporting(false) }
   }
 
