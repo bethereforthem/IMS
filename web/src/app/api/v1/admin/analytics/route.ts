@@ -13,7 +13,20 @@ export const GET = withAuth(
     const last7d  = new Date(now.getTime() - 7  * 24 * 3600 * 1000).toISOString()
     const last24h = new Date(now.getTime() - 24 * 3600 * 1000).toISOString()
 
+    // Row-returning queries are subject to PostgREST's max-rows cap, so the
+    // headline figures are taken from exact COUNT queries instead — those stay
+    // correct however much history the tables hold. The row fetches below feed
+    // the charts only, and report when they were truncated.
+    const CHART_ROW_LIMIT = 20000
+
+    // One round of concurrent queries, not two. Split across two awaits this
+    // page cost roughly double the latency of its slowest query for no reason.
     const [
+      { count: exactActiveUsers },
+      { count: exactActiveSessions },
+      { count: exactLogins24h },
+      { count: exactFailed24h },
+      { count: exactOpenIncidents },
       { data: activeSessions },
       { data: recentLogins },
       { data: loginsByDay },
@@ -24,36 +37,54 @@ export const GET = withAuth(
       { data: securityByDay },
       { data: hourlyLogins },
     ] = await Promise.all([
+      db.from('users').select('id', { count: 'exact', head: true }).eq('active', true),
+      db.from('user_sessions').select('id', { count: 'exact', head: true })
+        .eq('revoked', false).gt('expires_at', now.toISOString()),
+      db.from('login_attempts').select('id', { count: 'exact', head: true })
+        .gte('attempted_at', last24h).eq('success', true),
+      db.from('login_attempts').select('id', { count: 'exact', head: true })
+        .gte('attempted_at', last24h).eq('success', false),
+      db.from('security_incidents').select('id', { count: 'exact', head: true })
+        .eq('resolved', false),
       db.from('user_sessions')
-        .select('institution', { count: 'exact', head: false })
+        .select('institution')
         .eq('revoked', false)
-        .gt('expires_at', now.toISOString()),
+        .gt('expires_at', now.toISOString())
+        .limit(CHART_ROW_LIMIT),
       db.from('login_attempts')
         .select('success, attempted_at, institution')
         .gte('attempted_at', last7d)
-        .order('attempted_at', { ascending: false }),
+        .order('attempted_at', { ascending: false })
+        .limit(CHART_ROW_LIMIT),
       db.from('login_attempts')
         .select('success, attempted_at')
-        .gte('attempted_at', last30d),
+        .gte('attempted_at', last30d)
+        .limit(CHART_ROW_LIMIT),
       db.from('security_incidents')
         .select('incident_type, severity')
-        .eq('resolved', false),
+        .eq('resolved', false)
+        .limit(CHART_ROW_LIMIT),
       db.from('users')
         .select('institution')
-        .eq('active', true),
+        .eq('active', true)
+        .limit(CHART_ROW_LIMIT),
       db.from('users')
         .select('role')
-        .eq('active', true),
+        .eq('active', true)
+        .limit(CHART_ROW_LIMIT),
       db.from('page_visits')
         .select('page_path, institution, role')
-        .gte('entered_at', last7d),
+        .gte('entered_at', last7d)
+        .limit(CHART_ROW_LIMIT),
       db.from('security_incidents')
         .select('created_at, severity')
-        .gte('created_at', last30d),
+        .gte('created_at', last30d)
+        .limit(CHART_ROW_LIMIT),
       // Hourly login heatmap — last 30 days
       db.from('login_attempts')
         .select('attempted_at, success')
-        .gte('attempted_at', last30d),
+        .gte('attempted_at', last30d)
+        .limit(CHART_ROW_LIMIT),
     ])
 
     if (!loginsByDay) return apiError('Analytics query failed', 500)
@@ -117,8 +148,11 @@ export const GET = withAuth(
     }
     const sessions_by_institution = Object.entries(sessionInstMap).map(([name, value]) => ({ name, value }))
 
-    const totalLogins24h = (recentLogins ?? []).filter(r => r.attempted_at >= last24h).length
-    const failedLogins24h = (recentLogins ?? []).filter(r => r.attempted_at >= last24h && !r.success).length
+    // Any chart dataset that came back at the cap is missing history, so the
+    // page can say so rather than drawing a quietly incomplete trend.
+    const charts_truncated = [
+      recentLogins, loginsByDay, hourlyLogins, pageVisits, securityByDay, activeSessions,
+    ].some(rows => (rows?.length ?? 0) >= CHART_ROW_LIMIT)
 
     // Hourly heatmap: 24 hours × 7 days-of-week grid (UTC)
     // Each cell = number of successful logins in that hour-of-day / day-of-week slot
@@ -138,11 +172,18 @@ export const GET = withAuth(
 
     return apiSuccess({
       summary: {
-        total_active_users: activeSessions?.length ?? 0,
-        total_logins_24h: totalLogins24h,
-        failed_logins_24h: failedLogins24h,
-        unresolved_incidents: incidentsByType?.length ?? 0,
+        // This read `activeSessions.length` — rows from user_sessions, not
+        // users. Every consumer labels it "Active Users", so one person signed
+        // in on three devices inflated the figure threefold. All five figures
+        // now come from exact COUNT queries.
+        total_active_users:   exactActiveUsers    ?? 0,
+        active_sessions:      exactActiveSessions ?? 0,
+        total_logins_24h:     exactLogins24h      ?? 0,
+        failed_logins_24h:    exactFailed24h      ?? 0,
+        unresolved_incidents: exactOpenIncidents  ?? 0,
       },
+      charts_truncated,
+      chart_row_limit: CHART_ROW_LIMIT,
       daily_logins,
       by_institution,
       by_role,
