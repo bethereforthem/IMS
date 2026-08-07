@@ -2,10 +2,33 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 import Cookies from 'js-cookie'
 import type {
   TokenResponse, Suspect, IntelligenceEvent,
-  Alert, CameraNode, DashboardStats, Case, SiemEvent, LocationRecord
+  Alert, CameraNode, DashboardStats, Case, SiemEvent, LocationRecord,
+  CustodyStats, CustodyEvent,
 } from '@/types'
+import type { RwLevel } from '@/lib/rw-locations'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
+
+/**
+ * Turn a rejected request into something worth showing an operator.
+ *
+ * Axios's own `err.message` is only ever "Request failed with status code 403",
+ * so the server's actual explanation — which lives at `response.data.error` —
+ * has to be dug out. A 403 is called out by name because the RNP menu offers
+ * pages (Cases, Intel Events) that some RNP roles genuinely cannot read, and
+ * "no permission" must not look like "no records".
+ */
+export function apiErrorMessage(e: unknown, fallback: string): string {
+  const err = e as {
+    response?: { status?: number; data?: { error?: string } }
+    code?: string
+  }
+  const serverMsg = err?.response?.data?.error
+  if (serverMsg) return serverMsg
+  if (err?.response?.status === 403) return 'You do not have permission to view this.'
+  if (err?.code === 'ECONNABORTED') return 'The request timed out. Please try again.'
+  return fallback
+}
 
 function createClient(): AxiosInstance {
   const client = axios.create({ baseURL: BASE_URL, timeout: 15000 })
@@ -75,8 +98,14 @@ export const statsApi = {
 // ─── Suspects ────────────────────────────────────────────────────────────────
 
 export const suspectsApi = {
-  list: (params?: { status?: string; limit?: number; offset?: number; name?: string }) =>
-    api.get<{ suspects: Suspect[]; total: number }>('/suspects', { params }),
+  list: (params?: {
+    status?: string; limit?: number; offset?: number; name?: string
+    clearance_level?: string; institution?: string
+    page?: number; page_size?: number
+  }) =>
+    api.get<{ suspects: Suspect[]; total: number; page: number; page_size: number }>(
+      '/suspects', { params }
+    ),
   get: (id: string) => api.get<Suspect>(`/suspects/${id}`),
   getWanted: () =>
     api.get<{ suspects: Suspect[]; total: number }>('/suspects?status=WANTED&limit=50')
@@ -93,14 +122,29 @@ export const suspectsApi = {
     notes?: string
     known_associates?: string[]
     distinguishing_marks?: string
+    /**
+     * Structured administrative chains. Persisted folded into `notes`, but sent
+     * separately so the server can validate them against the official dataset.
+     */
+    birthplace?: Partial<Record<RwLevel, string>>
+    residence?: Partial<Record<RwLevel, string>>
+    domicile?: Partial<Record<RwLevel, string>>
   }) => api.post<Suspect>('/suspects', data),
 }
 
 // ─── Intelligence events ─────────────────────────────────────────────────────
 
 export const intelligenceApi = {
-  listEvents: (params?: { source_tag?: string; limit?: number; officer_id?: string }) =>
-    api.get<{ events: IntelligenceEvent[]; total: number }>('/intelligence/events', { params }),
+  listEvents: (params?: {
+    source_tag?: string; limit?: number; officer_id?: string; suspect_id?: string
+    criminal_record_found?: boolean; alert_generated?: boolean; has_location?: boolean
+    institution?: string; since?: string
+    q?: string; sort?: string; order?: 'asc' | 'desc'
+    page?: number; page_size?: number
+  }) =>
+    api.get<{ events: IntelligenceEvent[]; total: number; page: number; page_size: number }>(
+      '/intelligence/events', { params }
+    ),
   getEvent: (id: string) => api.get<IntelligenceEvent>(`/intelligence/events/${id}`),
   acknowledgeAlert: (alertId: string) => api.patch(`/alerts/${alertId}/read`),
   getVillageEvents: (limit = 30) =>
@@ -151,6 +195,8 @@ export const patrolApi = {
     insecurity_type: string
     location_lat?: number | null
     location_lng?: number | null
+    /** Structured administrative chain of where the activity happens. */
+    location?: Partial<Record<RwLevel, string>>
     location_description?: string
     file_urls?: string[]
   }) => api.post<{ suspect_id?: string | null; matched_existing_record?: boolean } & Record<string, unknown>>('/patrol/report', data),
@@ -178,8 +224,14 @@ export const cameraApi = {
 // ─── Cases ───────────────────────────────────────────────────────────────────
 
 export const casesApi = {
-  list: (params?: { status?: string; limit?: number }) =>
-    api.get<{ cases: Case[]; total: number }>('/cases', { params }),
+  list: (params?: {
+    status?: string; category?: string; institution?: string; clearance_level?: string
+    q?: string; sort?: string; order?: 'asc' | 'desc'
+    limit?: number; page?: number; page_size?: number
+  }) =>
+    api.get<{ cases: Case[]; total: number; page: number; page_size: number }>(
+      '/cases', { params }
+    ),
   get: (id: string) =>
     api.get<Case & {
       category?: string
@@ -248,14 +300,32 @@ export const warrantsApi = {
 // ─── Corrections ──────────────────────────────────────────────────────────────
 
 export const correctionsApi = {
-  list: (params?: { custody_status?: string; limit?: number }) =>
-    api.get<{ records: Record<string, unknown>[]; total: number }>('/corrections', { params }),
+  list: (params?: {
+    custody_status?: string; facility_name?: string; threat_level?: number
+    q?: string; sort?: string; order?: 'asc' | 'desc'
+    page?: number; page_size?: number; limit?: number
+  }) =>
+    api.get<{
+      records: Record<string, unknown>[]
+      total: number; page: number; page_size: number
+    }>('/corrections', { params }),
   get: (id: string) =>
     api.get<Record<string, unknown>>(`/corrections/${id}`),
   create: (data: Record<string, unknown>) =>
     api.post<Record<string, unknown>>('/corrections', data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<Record<string, unknown>>(`/corrections/${id}`, data),
+  release: (id: string) =>
+    api.delete<{ released: boolean; id: string }>(`/corrections/${id}`),
+  stats: () => api.get<CustodyStats>('/corrections/stats'),
+  events: (params?: {
+    event_type?: string; facility?: string; q?: string
+    order?: 'asc' | 'desc'; page?: number; page_size?: number
+  }) =>
+    api.get<{
+      events: CustodyEvent[]; total: number; page: number; page_size: number
+      counts: Record<string, number>; facilities: string[]
+    }>('/corrections/events', { params }),
 }
 
 // ─── International partners ───────────────────────────────────────────────────
@@ -369,11 +439,18 @@ export interface SystemControl {
 
 export interface AdminAnalytics {
   summary: {
+    /** Distinct active user accounts — not sessions. */
     total_active_users: number
+    /** Live sessions; one user may hold several. */
+    active_sessions: number
+    /** Successful sign-ins only. */
     total_logins_24h: number
     failed_logins_24h: number
     unresolved_incidents: number
   }
+  /** True when a chart dataset hit `chart_row_limit` and is missing history. */
+  charts_truncated: boolean
+  chart_row_limit: number
   daily_logins: Array<{ date: string; success: number; failed: number }>
   by_institution: Array<{ name: string; value: number }>
   by_role: Array<{ name: string; value: number }>
@@ -395,20 +472,31 @@ export const adminPortalApi = {
       login_attempts: Array<{ id: string; success: boolean; ip_address: string | null; device_type: string | null; browser: string | null; os: string | null; country_name: string | null; city: string | null; failure_reason: string | null; attempted_at: string }>
       page_visits: Array<{ id: string; page_path: string; page_title: string | null; entered_at: string; left_at: string | null; duration_seconds: number | null }>
     }>(`/admin/users/${id}`),
+  /** Disabling or locking also revokes the user's live sessions. */
   updateUser: (id: string, data: { active?: boolean; locked?: boolean }) =>
-    api.patch<{ updated: boolean }>(`/admin/users/${id}`, data),
+    api.patch<{ updated: boolean; sessions_revoked: number }>(`/admin/users/${id}`, data),
+  /** A role change revokes live sessions so the new permissions apply at once. */
   changeRole: (id: string, role: string) =>
-    api.patch<{ updated: boolean; role: string }>(`/admin/users/${id}/permissions`, { role }),
+    api.patch<{
+      updated: boolean; role: string; previous_role?: string
+      sessions_revoked: number; unchanged?: boolean
+    }>(`/admin/users/${id}/permissions`, { role }),
   resetCredentials: (id: string, new_password: string) =>
     api.post<{ reset: boolean }>(`/admin/users/${id}/reset`, { new_password }),
 
   // Sessions
+  /** `count` is the true number of live sessions; `sessions` is capped by `limit`. */
   getSessions: (params?: { institution?: string; limit?: number }) =>
-    api.get<{ sessions: AdminSession[]; count: number }>('/admin/sessions', { params }),
+    api.get<{ sessions: AdminSession[]; count: number; returned: number; truncated: boolean }>(
+      '/admin/sessions', { params },
+    ),
 
   // Security incidents
+  /** `count` is the true number of incidents in this state; the list is capped by `limit`. */
   getIncidents: (resolved = false, limit = 50) =>
-    api.get<{ incidents: SecurityIncident[]; count: number }>(`/admin/security?resolved=${resolved}&limit=${limit}`),
+    api.get<{ incidents: SecurityIncident[]; count: number; returned: number; truncated: boolean }>(
+      `/admin/security?resolved=${resolved}&limit=${limit}`,
+    ),
   resolveIncident: (id: string, resolution_notes?: string) =>
     api.post<{ resolved: boolean }>(`/admin/security/${id}/resolve`, { resolution_notes }),
 
@@ -506,6 +594,9 @@ export interface AIPredictionRun {
   completed_at: string | null
   created_at: string
   status: 'RUNNING' | 'COMPLETED' | 'FAILED'
+  /** The model this run actually used, as recorded on `ai_prediction_runs`. */
+  model_version?: string | null
+  claude_model?: string | null
 }
 
 export interface AIAnalysisResult {
@@ -534,6 +625,12 @@ export const aiIntelligenceApi = {
       has_data: boolean
       analysis_in_progress: boolean
       message?: string
+      /** Set when no run has completed but an earlier one failed, with its reason. */
+      last_failure?: { created_at?: string; error_message?: string } | null
+      /** Latest `valid_until` across the returned predictions. */
+      valid_until?: string | null
+      /** True when that expiry has passed — the run is served, but is not current. */
+      stale?: boolean
     }>('/ai-intelligence/predictions' + (runId ? `?run_id=${runId}` : '')),
 
   submitFeedback: (data: {
@@ -547,6 +644,17 @@ export const aiIntelligenceApi = {
 
 // Legacy stub kept for backward compat
 export const adminApi = {
+  /** Active NISS directors other than the caller, eligible to co-sign a lockdown. */
+  getLockdownCosigners: () =>
+    api.get<{
+      directors: Array<{
+        id: string
+        full_name: string
+        badge_number: string | null
+        last_login_at: string | null
+      }>
+      total: number
+    }>('/admin/emergency-lockdown'),
   emergencyLockdown: (secondDirectorId: string, reason: string) =>
     api.post('/admin/emergency-lockdown', { second_director_id: secondDirectorId, reason }),
   revokeAccess: (targetUserId: string, reason: string) =>
@@ -716,6 +824,20 @@ export const agentTrackingApi = {
     ),
   sessionAction: (sessionId: string, action: 'pause' | 'resume' | 'close') =>
     api.patch(`/agent-tracking/sessions/${sessionId}`, { action }),
+  /** Transmit a commander's order to the agent on a live tracking session. */
+  sendDirective: (sessionId: string, message: string) =>
+    api.post<{
+      directive_id: string
+      intelligence_event_id: string | null
+      delivered_to: {
+        agent_id: string
+        agent_name: string | null
+        agent_badge: string | null
+        institution: string | null
+      }
+      agent_offline: boolean
+      transmitted_at: string
+    }>(`/agent-tracking/sessions/${sessionId}/directive`, { message }),
 }
 
 // ─── Agent Availability / Heartbeat ──────────────────────────────────────────
