@@ -22,7 +22,7 @@ export default function NISSIntelligencePage() {
 
   useEffect(() => {
     intelligenceApi.listEvents({ limit: 100 }).then((r) => {
-      if (r.data?.events?.length) setEvents(r.data.events)
+      if (Array.isArray(r.data?.events)) setEvents(r.data.events)
     }).catch(() => {})
   }, [])
 
