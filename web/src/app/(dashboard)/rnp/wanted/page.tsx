@@ -25,39 +25,67 @@ const STATUS_BADGE: Record<string, string> = {
 
 const FILTER_STATUSES: FilterStatus[] = ['ALL', 'WANTED', 'ACTIVE', 'INTERPOL_FLAGGED']
 
+const TRACKED_STATUSES = ['WANTED', 'ACTIVE', 'INTERPOL_FLAGGED']
+
+/** Every alias on record, tolerating the older single-`alias` shape. */
+function aliasesOf(s: Suspect): string[] {
+  if (Array.isArray(s.aliases)) return s.aliases.filter(Boolean)
+  return s.alias ? [s.alias] : []
+}
+
 export default function WantedPage() {
   const { user } = useAuth()
   const [filter, setFilter] = useState<FilterStatus>('ALL')
   const [search, setSearch] = useState('')
   const [rawSuspects, setRawSuspects] = useState<Suspect[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    suspectsApi.list({ limit: 200 }).then(r => {
-      if (r.data?.suspects?.length) {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    suspectsApi.list({ limit: 200 })
+      .then(r => {
+        if (cancelled) return
+        // Assign unconditionally. Guarding on `.length` meant an empty result
+        // left whatever was on screen before, so the list could never go back
+        // to being empty and the "no matches" state was unreachable.
         setRawSuspects(
-          r.data.suspects.filter((s: Suspect) =>
-            ['WANTED', 'ACTIVE', 'INTERPOL_FLAGGED'].includes(s.status)
+          (r.data?.suspects ?? []).filter((s: Suspect) =>
+            TRACKED_STATUSES.includes(s.status)
           )
         )
-      }
-    }).catch(() => {})
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // Swallowing this rendered an indistinguishable empty page whether the
+        // database held no suspects or the request was rejected outright.
+        const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        setError(msg ?? 'Could not load suspects.')
+        setRawSuspects([])
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   const suspects = rawSuspects.filter(s => {
     const matchStatus = filter === 'ALL' || s.status === filter
-    const q = search.toLowerCase()
+    const q = search.trim().toLowerCase()
+    // Search every alias, not just the first one — an operator searching a
+    // suspect's second known alias got no result before.
     const matchSearch =
       !q ||
-      s.full_name.toLowerCase().includes(q) ||
+      (s.full_name ?? '').toLowerCase().includes(q) ||
       (s.ims_reference ?? '').toLowerCase().includes(q) ||
-      (s.alias ?? '').toLowerCase().includes(q)
+      aliasesOf(s).some(a => a.toLowerCase().includes(q))
     return matchStatus && matchSearch
   })
 
   const wantedCount = rawSuspects.filter(s => s.status === 'WANTED').length
   const interpolCount = rawSuspects.filter(s => s.status === 'INTERPOL_FLAGGED').length
   const activeCount = rawSuspects.filter(s => s.status === 'ACTIVE').length
-  const highThreatCount = rawSuspects.filter(s => s.threat_level >= 4).length
+  const highThreatCount = rawSuspects.filter(s => (s.threat_level ?? 0) >= 4).length
 
   return (
     <div className="space-y-6">
@@ -112,11 +140,26 @@ export default function WantedPage() {
         Showing {suspects.length} of {rawSuspects.length} suspects
       </p>
 
+      {error && (
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
       {/* Suspect cards */}
       <div className="space-y-3">
-        {suspects.length === 0 && (
+        {loading && (
+          <div className="space-y-3" aria-busy="true">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-32 animate-pulse" />
+            ))}
+          </div>
+        )}
+        {!loading && !error && suspects.length === 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-sm text-slate-500">
-            No suspects match the current filters.
+            {rawSuspects.length === 0
+              ? 'No wanted or active suspects are on record.'
+              : 'No suspects match the current filters.'}
           </div>
         )}
         {suspects.map(s => {
@@ -138,13 +181,13 @@ export default function WantedPage() {
               <div className="flex flex-col sm:flex-row gap-4">
                 {/* Left — threat dots + status */}
                 <div className="flex sm:flex-col items-center sm:items-start gap-3 sm:gap-2 sm:w-28 shrink-0">
-                  <div className="flex gap-1">
+                  <div className="flex gap-1" title={`Threat level ${s.threat_level ?? 'not assessed'}`}>
                     {Array.from({ length: 5 }).map((_, i) => (
                       <div
                         key={i}
                         className={clsx(
                           'h-2.5 w-2.5 rounded-full',
-                          i < s.threat_level ? 'bg-red-500' : 'bg-slate-700'
+                          i < (s.threat_level ?? 0) ? 'bg-red-500' : 'bg-slate-700'
                         )}
                       />
                     ))}
@@ -155,16 +198,18 @@ export default function WantedPage() {
                   )}>
                     {s.status.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-[10px] text-slate-500">Threat {s.threat_level}/5</span>
+                  <span className="text-[10px] text-slate-500">
+                    {s.threat_level == null ? 'Threat not assessed' : `Threat ${s.threat_level}/5`}
+                  </span>
                 </div>
 
                 {/* Center — identity */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <h3 className="text-sm font-bold text-white">{s.full_name}</h3>
-                    {s.alias && (
-                      <span className="text-xs text-slate-400 italic">"{s.alias}"</span>
-                    )}
+                    {aliasesOf(s).map(a => (
+                      <span key={a} className="text-xs text-slate-400 italic">&ldquo;{a}&rdquo;</span>
+                    ))}
                   </div>
                   <p className="text-[11px] font-mono text-rnp mt-0.5">{s.ims_reference}</p>
                   <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5">
