@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
+import LocationSelector from '@/components/shared/LocationSelector'
+import { rwLocationFrom } from '@/lib/rw-locations'
 
 // ─── Unique ID helper ────────────────────────────────────────────────────────
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
@@ -95,7 +97,8 @@ const mkInvestigator = (o: Partial<InvestigatorEntry> = {}): InvestigatorEntry =
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const PROVINCES = ['Kigali City', 'Northern Province', 'Southern Province', 'Eastern Province', 'Western Province']
+// Province/district/sector/cell/village options now come from the official
+// dataset via <LocationSelector> — see lib/rw-locations.ts.
 
 const CATEGORIES = [
   'ARMED_ROBBERY', 'FRAUD', 'DRUG_OFFENSE', 'HOMICIDE', 'CORRUPTION',
@@ -287,47 +290,23 @@ function PersonForm({
             </div>
           </div>
 
-          {/* Row 4: Country + Province */}
+          {/* Row 4: Country */}
           <div className={G2}>
             <div>
               <label className={LBL}>Country</label>
               <input value={person.country} onChange={e => s('country', e.target.value)}
                 className={INP} placeholder="Rwanda" />
             </div>
-            <div>
-              <label className={LBL}>Province</label>
-              <select value={person.province} onChange={e => s('province', e.target.value)} className={SEL}>
-                <option value="">— Select Province —</option>
-                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
           </div>
 
-          {/* Row 5: District + Sector + Cell */}
-          <div className={G3}>
-            <div>
-              <label className={LBL}>District</label>
-              <input value={person.district} onChange={e => s('district', e.target.value)}
-                className={INP} placeholder="District" />
-            </div>
-            <div>
-              <label className={LBL}>Sector</label>
-              <input value={person.sector} onChange={e => s('sector', e.target.value)}
-                className={INP} placeholder="Sector" />
-            </div>
-            <div>
-              <label className={LBL}>Cell</label>
-              <input value={person.cell} onChange={e => s('cell', e.target.value)}
-                className={INP} placeholder="Cell" />
-            </div>
-          </div>
-
-          {/* Row 6: Village */}
-          <div>
-            <label className={LBL}>Village</label>
-            <input value={person.village} onChange={e => s('village', e.target.value)}
-              className={INP} placeholder="Village name" />
-          </div>
+          {/* Rows 5–6: Rwandan address, cascading from the official
+              Province > District > Sector > Cell > Village list */}
+          <LocationSelector
+            idPrefix={`person-${person.id}-address`}
+            value={rwLocationFrom(person)}
+            onChange={next => onUpdate({ ...person, ...next })}
+            classNames={{ label: LBL, select: SEL }}
+          />
 
           {/* Row 7: Residential + Domicile */}
           <div className={G2}>
@@ -788,12 +767,21 @@ export default function NewCasePage() {
       const caseId = newCase.id
 
       // Step 2: Save the investigation report
-      await fetch(`/api/v1/cases/${caseId}/report`, {
+      const reportRes = await fetch(`/api/v1/cases/${caseId}/report`, {
         method: 'PUT',
         credentials: 'include',
         headers: authHeader,
         body: JSON.stringify({ report_data: report, status: submitStatus }),
       })
+      if (!reportRes.ok) {
+        // Server-side validation (e.g. a location chain that does not exist)
+        // rejects the report — surface it instead of navigating away as though
+        // it had saved.
+        const detail = await reportRes.json().catch(() => null)
+        throw new Error(
+          detail?.error ?? detail?.message ?? 'The case was created but the report could not be saved.',
+        )
+      }
 
       // Step 3: Clear draft
       localStorage.removeItem('ims_new_case_draft')
@@ -1104,7 +1092,7 @@ export default function NewCasePage() {
       <SectionCard anchor="sec-crime" icon={MapPin} color="text-red-400"
         title="V. Crime Information" subtitle="Date, time and location details of the crime">
         <div className="space-y-3">
-          <div className={G3}>
+          <div className={G2}>
             <div>
               <label className={LBL}>Date of Crime *</label>
               <input type="date" value={report.crime_info.date_of_crime}
@@ -1115,54 +1103,25 @@ export default function NewCasePage() {
               <input type="time" value={report.crime_info.time_of_crime}
                 onChange={e => upd('crime_info', { ...report.crime_info, time_of_crime: e.target.value })} className={INP} />
             </div>
-            <div>
-              <label className={LBL}>Province</label>
-              <select value={report.crime_info.province}
-                onChange={e => upd('crime_info', { ...report.crime_info, province: e.target.value })} className={SEL}>
-                <option value="">— Select —</option>
-                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
           </div>
 
-          <div className={G3}>
-            <div>
-              <label className={LBL}>District</label>
-              <input value={report.crime_info.district}
-                onChange={e => upd('crime_info', { ...report.crime_info, district: e.target.value })}
-                className={INP} placeholder="District" />
-            </div>
-            <div>
-              <label className={LBL}>Sector</label>
-              <input value={report.crime_info.sector}
-                onChange={e => upd('crime_info', { ...report.crime_info, sector: e.target.value })}
-                className={INP} placeholder="Sector" />
-            </div>
-            <div>
-              <label className={LBL}>Cell</label>
-              <input value={report.crime_info.cell}
-                onChange={e => upd('crime_info', { ...report.crime_info, cell: e.target.value })}
-                className={INP} placeholder="Cell" />
-            </div>
-          </div>
+          {/* Crime scene, cascading from the official administrative list */}
+          <LocationSelector
+            idPrefix="crime-scene"
+            value={rwLocationFrom(report.crime_info)}
+            onChange={next => upd('crime_info', { ...report.crime_info, ...next })}
+            classNames={{ label: LBL, select: SEL }}
+          />
 
-          <div className={G2}>
-            <div>
-              <label className={LBL}>Village</label>
-              <input value={report.crime_info.village}
-                onChange={e => upd('crime_info', { ...report.crime_info, village: e.target.value })}
-                className={INP} placeholder="Village" />
-            </div>
-            <div>
-              <label className={LBL}>GPS Coordinates (optional)</label>
-              <div className="flex gap-2">
-                <input value={report.crime_info.gps_lat}
-                  onChange={e => upd('crime_info', { ...report.crime_info, gps_lat: e.target.value })}
-                  className={INP} placeholder="Latitude" />
-                <input value={report.crime_info.gps_lng}
-                  onChange={e => upd('crime_info', { ...report.crime_info, gps_lng: e.target.value })}
-                  className={INP} placeholder="Longitude" />
-              </div>
+          <div>
+            <label className={LBL}>GPS Coordinates (optional)</label>
+            <div className="flex gap-2 sm:max-w-md">
+              <input value={report.crime_info.gps_lat}
+                onChange={e => upd('crime_info', { ...report.crime_info, gps_lat: e.target.value })}
+                className={INP} placeholder="Latitude" />
+              <input value={report.crime_info.gps_lng}
+                onChange={e => upd('crime_info', { ...report.crime_info, gps_lng: e.target.value })}
+                className={INP} placeholder="Longitude" />
             </div>
           </div>
 
