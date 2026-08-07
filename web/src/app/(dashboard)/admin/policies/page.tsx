@@ -64,8 +64,11 @@ function PolicyEditor({ mode, policyType, existing, onClose, onSaved }: EditorPr
       }
       onSaved()
       onClose()
-    } catch {
-      setError('Failed to save. Please try again.')
+    } catch (e: unknown) {
+      // The route distinguishes permission problems, invalid policy types and
+      // missing fields — all of which read as "please try again" otherwise.
+      const detail = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setError(detail ?? 'Failed to save. Please try again.')
     } finally {
       setSaving(false)
     }
