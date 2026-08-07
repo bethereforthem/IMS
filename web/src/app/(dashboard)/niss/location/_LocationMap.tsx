@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
+import { createBaseLayers } from '@/lib/mapBaseLayers'
 import { formatDistanceToNow } from 'date-fns'
 import type { LocationRecord } from '@/types'
 import { alarmManager, type MapSoundType } from '@/lib/mapSounds'
@@ -200,17 +201,10 @@ export default function LocationMap({ locations, agents = [], alertEvents = [], 
       })
       mapRef.current = map
 
-      const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 })
-      const baseLayers: Record<string, L.TileLayer> = {
-        '🌑 Dark (Tactical)':    darkLayer,
-        '🛰️ Satellite':          L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
-        '🛰️ Satellite + Labels': L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
-        '🗺️ Streets (English)':  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '🗺️ Streets (OSM)':      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }),
-        '☀️ Light':              L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '⛰️ Terrain':           L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenTopoMap', maxZoom: 17 }),
-      }
-      darkLayer.addTo(map)
+      // Shared across every dashboard map — see lib/mapBaseLayers.ts.
+      // These two default to the tactical dark basemap rather than satellite.
+      const { layers: baseLayers, initialLayer } = createBaseLayers(L, { initial: '🌑 Dark (Tactical)' })
+      initialLayer.addTo(map)
 
       // Create empty layer groups — they stay alive and are updated in-place
       const suspectLayer = L.layerGroup().addTo(map)
