@@ -3,6 +3,13 @@ import { useState } from 'react'
 import { X, UserPlus, Loader2, CheckCircle2, AlertCircle, Plus } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { suspectsApi } from '@/lib/api'
+import LocationSelector from '@/components/shared/LocationSelector'
+import {
+  composeRwAddress, formatRwLocation, rwLocationFromFields,
+  RW_FIELDS_BIRTHPLACE as POB_FIELDS,
+  RW_FIELDS_DOMICILE as DOM_FIELDS,
+  RW_FIELDS_RESIDENTIAL as RES_FIELDS,
+} from '@/lib/rw-locations'
 
 export interface SuspectPrefill {
   caseReference: string
@@ -34,9 +41,17 @@ function buildEmptyForm(prefill?: SuspectPrefill, user?: { institution?: string 
     mother_name: '',
     date_of_birth: '',
     sex: '',
-    place_of_birth: '',
-    residential_address: prefill?.location ?? '',
-    domicile_address: '',
+    // Place of birth only needs district precision, so the selector for it is
+    // capped at that depth.
+    pob_province: '',
+    pob_district: '',
+    // Residential and domicile addresses are held as the full administrative
+    // chain plus a free-text detail line (house number, landmark, …). They are
+    // recombined into single strings by `composeAddress` at submit time.
+    res_province: '', res_district: '', res_sector: '', res_cell: '', res_village: '',
+    res_detail: prefill?.location ?? '',
+    dom_province: '', dom_district: '', dom_sector: '', dom_cell: '', dom_village: '',
+    dom_detail: '',
     telephone: '',
     email: '',
     national_id: '',
@@ -66,9 +81,12 @@ function buildNotesPayload(form: ReturnType<typeof buildEmptyForm>, prefill?: Su
     form.father_name    && `Father's Name: ${form.father_name}`,
     form.mother_name    && `Mother's Name: ${form.mother_name}`,
     form.sex            && `Sex: ${form.sex}`,
-    form.place_of_birth && `Place of Birth: ${form.place_of_birth}`,
-    form.residential_address && `Residential Address: ${form.residential_address}`,
-    form.domicile_address    && `Domicile Address: ${form.domicile_address}`,
+    formatRwLocation(rwLocationFromFields(form, POB_FIELDS), 'district') &&
+      `Place of Birth: ${formatRwLocation(rwLocationFromFields(form, POB_FIELDS), 'district')}`,
+    composeRwAddress(form, RES_FIELDS, 'res_detail') &&
+      `Residential Address: ${composeRwAddress(form, RES_FIELDS, 'res_detail')}`,
+    composeRwAddress(form, DOM_FIELDS, 'dom_detail') &&
+      `Domicile Address: ${composeRwAddress(form, DOM_FIELDS, 'dom_detail')}`,
     form.telephone      && `Telephone: ${form.telephone}`,
     form.email          && `Email: ${form.email}`,
     form.national_id    && `National ID/Passport: ${form.national_id}`,
@@ -116,6 +134,11 @@ export function AddSuspectModal({ onClose, onSuccess, prefill }: Props) {
         owning_institution: form.owning_institution,
         date_of_birth: form.date_of_birth || undefined,
         notes: buildNotesPayload(form, prefill) || undefined,
+        // Structured chains, so the server can re-validate what was picked
+        // rather than trusting the strings folded into `notes`.
+        birthplace: rwLocationFromFields(form, POB_FIELDS),
+        residence:  rwLocationFromFields(form, RES_FIELDS),
+        domicile:   rwLocationFromFields(form, DOM_FIELDS),
       })
       return true
     } catch (err: unknown) {
@@ -240,12 +263,20 @@ export function AddSuspectModal({ onClose, onSuccess, prefill }: Props) {
                 </div>
               </div>
 
+              <div>
+                <p className={LABEL}>Place of Birth</p>
+                <LocationSelector
+                  idPrefix="suspect-pob"
+                  depth="district"
+                  columns={2}
+                  value={rwLocationFromFields(form, POB_FIELDS)}
+                  fieldNames={POB_FIELDS}
+                  onChange={(_next, patch) => setForm(prev => ({ ...prev, ...patch }))}
+                  classNames={{ label: LABEL, select: SELECT }}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={LABEL}>Place of Birth</label>
-                  <input value={form.place_of_birth} onChange={e => set('place_of_birth', e.target.value)}
-                    className={INPUT} placeholder="District, Province" />
-                </div>
                 <div>
                   <label className={LABEL}>Nationality (ISO 3)</label>
                   <input value={form.nationality} onChange={e => set('nationality', e.target.value)}
@@ -289,16 +320,39 @@ export function AddSuspectModal({ onClose, onSuccess, prefill }: Props) {
                 </div>
               </div>
 
-              <div>
-                <label className={LABEL}>Residential Address</label>
-                <input value={form.residential_address} onChange={e => set('residential_address', e.target.value)}
-                  className={INPUT} placeholder="Village, Cell, Sector, District, Province" />
+              <div className="space-y-2 pt-1">
+                <p className={SECTION_TITLE}>Residential Address</p>
+                <LocationSelector
+                  idPrefix="suspect-residence"
+                  value={rwLocationFromFields(form, RES_FIELDS)}
+                  fieldNames={RES_FIELDS}
+                  onChange={(_next, patch) => setForm(prev => ({ ...prev, ...patch }))}
+                  classNames={{ label: LABEL, select: SELECT }}
+                />
+                <div>
+                  <label className={LABEL} htmlFor="suspect-res-detail">House / Street / Landmark</label>
+                  <input id="suspect-res-detail" value={form.res_detail}
+                    onChange={e => set('res_detail', e.target.value)}
+                    className={INPUT} placeholder="Plot number, nearest landmark, etc." />
+                </div>
               </div>
 
-              <div>
-                <label className={LABEL}>Domicile Address</label>
-                <input value={form.domicile_address} onChange={e => set('domicile_address', e.target.value)}
-                  className={INPUT} placeholder="If different from residential address" />
+              <div className="space-y-2 pt-1">
+                <p className={SECTION_TITLE}>Domicile Address</p>
+                <p className="text-[11px] text-slate-500 -mt-1">Permanent / family home, if different from residential.</p>
+                <LocationSelector
+                  idPrefix="suspect-domicile"
+                  value={rwLocationFromFields(form, DOM_FIELDS)}
+                  fieldNames={DOM_FIELDS}
+                  onChange={(_next, patch) => setForm(prev => ({ ...prev, ...patch }))}
+                  classNames={{ label: LABEL, select: SELECT }}
+                />
+                <div>
+                  <label className={LABEL} htmlFor="suspect-dom-detail">House / Street / Landmark</label>
+                  <input id="suspect-dom-detail" value={form.dom_detail}
+                    onChange={e => set('dom_detail', e.target.value)}
+                    className={INPUT} placeholder="Plot number, nearest landmark, etc." />
+                </div>
               </div>
 
               <div>
