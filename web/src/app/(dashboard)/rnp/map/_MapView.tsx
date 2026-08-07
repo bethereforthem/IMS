@@ -7,9 +7,31 @@ import type { CameraNode, IntelligenceEvent } from '@/types'
 import { alarmManager, type MapSoundType } from '@/lib/mapSounds'
 import { alertSignalIconHtml, alertSignalPopupHtml, alertEventSoundType, alertEventSeverity } from '@/lib/mapAlertUtils'
 import { attachMapNavigation, type MapNavHandle } from '@/lib/mapNav'
+import { cameraStatus } from '@/lib/camera-status'
+import { createBaseLayers } from '@/lib/mapBaseLayers'
 
-const THREAT_COLOR = (level?: number) =>
-  !level ? '#94a3b8' : level >= 8 ? '#ef4444' : level >= 5 ? '#f97316' : '#fbbf24'
+/**
+ * Escape a value before it goes into a Leaflet popup.
+ *
+ * `bindPopup` takes a raw HTML string, and these templates interpolate operator-
+ * supplied fields — camera node identifiers, location descriptions, suspect
+ * names — directly into it. Anything containing markup was being parsed as
+ * markup and executed.
+ */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// `suspects.threat_level` is CHECK (BETWEEN 1 AND 5). These thresholds were
+// written for a 1-10 scale, so `>= 8` could never be reached and the highest
+// threat the system can record was drawn in the same orange as a mid-range one.
+const THREAT_COLOR = (level?: number | null) =>
+  !level ? '#94a3b8' : level >= 5 ? '#ef4444' : level >= 4 ? '#f97316' : level >= 3 ? '#fbbf24' : '#84cc16'
 
 const STATUS_LABEL: Record<string, string> = {
   WANTED:    'WANTED',
@@ -82,8 +104,12 @@ export default function MapView({
 
   // ── Camera offline alarms ──────────────────────────────────────────────────
   useEffect(() => {
-    if (camFirstRef.current) { camFirstRef.current = false; cameraNodes.filter(c => !c.is_active).forEach(c => camOffRef.current.add(c.id)); return }
-    const current = new Set(cameraNodes.filter(c => !c.is_active).map(c => c.id))
+    // Keyed on real liveness, not the `is_active` enable flag. Watching that
+    // flag meant a node that silently stopped transmitting never raised the
+    // offline alarm — only one an administrator had explicitly disabled did.
+    const isDown = (c: CameraNode) => !cameraStatus(c).live
+    if (camFirstRef.current) { camFirstRef.current = false; cameraNodes.filter(isDown).forEach(c => camOffRef.current.add(c.id)); return }
+    const current = new Set(cameraNodes.filter(isDown).map(c => c.id))
     for (const id of current) {
       if (!camOffRef.current.has(id)) { alarmManager.register(`cam-${id}`, 'offline'); registeredRef.current.add(`cam-${id}`) }
     }
@@ -154,18 +180,9 @@ export default function MapView({
       const map = L.map(divRef.current, { center: [-1.9403, 29.8739], zoom: 11, zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 100 })
       mapRef.current = map
 
-      // Satellite imagery with roads, landmarks and place names is the default view
-      const hybridLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 })
-      const baseLayers: Record<string, L.TileLayer> = {
-        '🛰️ Satellite + Labels': hybridLayer,
-        '🛰️ Satellite':          L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
-        '🌑 Dark (Tactical)':    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '🗺️ Streets (English)':  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '🗺️ Streets (OSM)':      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }),
-        '☀️ Light':              L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '⛰️ Terrain':           L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenTopoMap', maxZoom: 17 }),
-      }
-      hybridLayer.addTo(map)
+      // Shared across every dashboard map — see lib/mapBaseLayers.ts.
+      const { layers: baseLayers, initialLayer } = createBaseLayers(L)
+      initialLayer.addTo(map)
 
       const cameraLayer  = L.layerGroup(); if (showCameras) cameraLayer.addTo(map)
       const eventLayer   = L.layerGroup(); if (showEvents)  eventLayer.addTo(map)
@@ -208,14 +225,17 @@ export default function MapView({
       layer.clearLayers()
       cameraNodes.forEach(cam => {
         if (cam.latitude == null || cam.longitude == null) return
-        const color = cam.is_active ? '#22c55e' : '#ef4444'
+        // Heartbeat-derived, so a node that has gone quiet stops being drawn as
+        // a healthy green marker labelled ONLINE.
+        const state = cameraStatus(cam)
+        const color = state.live ? '#22c55e' : '#ef4444'
         ;(L.circleMarker([cam.latitude, cam.longitude], { radius: 10, fillOpacity: 0.85, fillColor: color, color: '#ffffff', weight: 2 })
           .bindPopup(`
             <div style="min-width:160px;font-size:12px;padding:2px;font-family:system-ui">
-              <div style="font-weight:700;font-size:13px;margin-bottom:4px;font-family:'Courier New',monospace">${cam.node_identifier}</div>
-              ${cam.location_name ? `<div style="color:#64748b;margin-bottom:6px">${cam.location_name}</div>` : ''}
-              <div style="font-weight:700;color:${color}">${cam.is_active ? '● ONLINE' : '● OFFLINE'}</div>
-              ${cam.last_heartbeat ? `<div style="color:#94a3b8;font-size:10px;margin-top:4px">${formatDistanceToNow(new Date(cam.last_heartbeat), { addSuffix: true })}</div>` : ''}
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;font-family:'Courier New',monospace">${esc(cam.node_identifier)}</div>
+              ${cam.location_name ? `<div style="color:#64748b;margin-bottom:6px">${esc(cam.location_name)}</div>` : ''}
+              <div style="font-weight:700;color:${color}">● ${esc(state.label)}</div>
+              ${cam.last_heartbeat ? `<div style="color:#94a3b8;font-size:10px;margin-top:4px">${esc(formatDistanceToNow(new Date(cam.last_heartbeat), { addSuffix: true }))}</div>` : ''}
               <div style="color:#94a3b8;font-family:'Courier New',monospace;font-size:10px;margin-top:2px">${cam.latitude.toFixed(4)}, ${cam.longitude!.toFixed(4)}</div>
             </div>
           `, { maxWidth: 240 }) as unknown as { addTo: (g: unknown) => void }).addTo(layer)
@@ -235,9 +255,9 @@ export default function MapView({
         ;(L.circleMarker([ev.location_lat, ev.location_lng], { radius: 7, fillOpacity: 0.8, fillColor: color, color: '#ffffff', weight: 1.5 })
           .bindPopup(`
             <div style="min-width:180px;font-size:12px;padding:2px;font-family:system-ui">
-              <div style="font-weight:700;font-size:13px;margin-bottom:4px">${ev.suspect_name ?? 'Unknown Subject'}</div>
-              <div style="color:#64748b;margin-bottom:4px">${ev.source_tag.replace(/_/g, ' ')}</div>
-              ${ev.location_description ? `<div style="color:#475569;margin-bottom:4px">${ev.location_description}</div>` : ''}
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px">${esc(ev.suspect_name ?? 'Unknown Subject')}</div>
+              <div style="color:#64748b;margin-bottom:4px">${esc(ev.source_tag.replace(/_/g, ' '))}</div>
+              ${ev.location_description ? `<div style="color:#475569;margin-bottom:4px">${esc(ev.location_description)}</div>` : ''}
               ${ev.confidence_score != null ? `<div style="color:#94a3b8;font-size:10px">Confidence: ${(ev.confidence_score * 100).toFixed(0)}%</div>` : ''}
               <div style="color:${color};font-weight:700;margin-top:4px">${ev.criminal_record_found ? '⚠ RECORD FOUND' : '✓ CLEAR'}</div>
               <div style="color:#94a3b8;font-size:10px;margin-top:4px">${format(new Date(ev.created_at), 'dd MMM yyyy HH:mm')}</div>
@@ -269,19 +289,19 @@ export default function MapView({
               <div style="background:#431407;border:1px solid #7c2d12;border-radius:3px;padding:4px 8px;margin-bottom:8px">
                 <span style="font-size:10px;font-weight:800;color:#fb923c;letter-spacing:1px">🏘 VILLAGE INTEL</span>
               </div>
-              <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#fff">${ev.suspect_name ?? 'Unknown Subject'}</div>
-              <div style="font-family:'Courier New',monospace;font-size:10px;color:#64748b;margin-bottom:8px">IMS REF: ${imsRef}</div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#fff">${esc(ev.suspect_name ?? 'Unknown Subject')}</div>
+              <div style="font-family:'Courier New',monospace;font-size:10px;color:#64748b;margin-bottom:8px">IMS REF: ${esc(imsRef)}</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
                 <div style="background:#1e293b;border-radius:3px;padding:4px 6px">
                   <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Status</div>
-                  <div style="font-size:11px;font-weight:700;color:#fb923c">${statusLabel}</div>
+                  <div style="font-size:11px;font-weight:700;color:#fb923c">${esc(statusLabel)}</div>
                 </div>
                 <div style="background:#1e293b;border-radius:3px;padding:4px 6px">
                   <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Threat Level</div>
-                  <div style="font-size:13px;font-weight:800;color:${threatColor};font-family:'Courier New',monospace">${ev.suspect_threat_level ?? '—'}/10</div>
+                  <div style="font-size:13px;font-weight:800;color:${threatColor};font-family:'Courier New',monospace">${ev.suspect_threat_level ?? '—'}/5</div>
                 </div>
               </div>
-              ${ev.location_description ? `<div style="background:#1e293b;border-radius:3px;padding:4px 6px;margin-bottom:6px"><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Location</div><div style="font-size:11px;color:#cbd5e1">${ev.location_description}</div><div style="font-size:9px;color:#475569;font-family:'Courier New',monospace;margin-top:2px">${coordStr}</div></div>` : ''}
+              ${ev.location_description ? `<div style="background:#1e293b;border-radius:3px;padding:4px 6px;margin-bottom:6px"><div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Location</div><div style="font-size:11px;color:#cbd5e1">${esc(ev.location_description)}</div><div style="font-size:9px;color:#475569;font-family:'Courier New',monospace;margin-top:2px">${coordStr}</div></div>` : ''}
               <div style="font-size:10px;color:#475569;margin-top:4px;text-align:right">
                 Detected ${formatDistanceToNow(new Date(ev.created_at), { addSuffix: true })}<br/>
                 <span style="font-family:'Courier New',monospace">${format(new Date(ev.created_at), 'dd MMM yyyy HH:mm')}</span>
