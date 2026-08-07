@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { logAudit, extractAuditContext } from '@/lib/audit'
+import { invalidateSessionCache } from '@/lib/access-enforcement'
 import type { AuthPayload } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
@@ -15,6 +16,8 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
     .update({ revoked: true, revoked_at: new Date().toISOString() })
     .eq('id', user.session_id)
     .eq('user_id', user.user_id)
+
+  invalidateSessionCache(user.session_id)
 
   if (error) {
     // Log but don't fail — the client should still clear its tokens
