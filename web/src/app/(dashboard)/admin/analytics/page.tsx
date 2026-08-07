@@ -73,9 +73,20 @@ export default function AdminAnalyticsPage() {
         </div>
       </div>
 
+      {data.charts_truncated && (
+        <div role="alert" style={{
+          background: '#451a03', border: '1px solid #f59e0b', borderRadius: '8px',
+          padding: '10px 14px', marginBottom: '14px', color: '#fde68a', fontSize: '12px',
+        }}>
+          Charts below are capped at {data.chart_row_limit.toLocaleString()} records and are missing
+          older history for this period. The summary figures above remain exact.
+        </div>
+      )}
+
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '14px', marginBottom: '24px' }}>
         {card('Active Users',        summary.total_active_users,   '#3b82f6')}
+        {card('Live Sessions',       summary.active_sessions,      '#8b5cf6')}
         {card('Logins (24h)',         summary.total_logins_24h,     '#22c55e')}
         {card('Failed Logins (24h)', summary.failed_logins_24h,    '#f97316')}
         {card('Open IDS Incidents',  summary.unresolved_incidents, '#ef4444')}
