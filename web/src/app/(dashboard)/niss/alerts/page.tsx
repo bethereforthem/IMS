@@ -139,7 +139,9 @@ export default function NISSAlertsPage() {
 
   const fetchAlerts = useCallback(() => {
     alertsApi.list({ limit: 200 }).then(r => {
-      if (!r.data?.alerts?.length) return
+      // Take the server's answer even when it is empty — this polls every 30 s,
+      // and bailing out on an empty list would leave cleared alerts on screen.
+      if (!Array.isArray(r.data?.alerts)) return
       const fetched: Alert[] = r.data.alerts
       const newIds = fetched.filter(a => !seenIdsRef.current.has(a.id))
       if (newIds.length > 0 && seenIdsRef.current.size > 0) {
