@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { StatCard } from '@/components/shared/StatCard'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
-import { intelligenceApi } from '@/lib/api'
+import { intelligenceApi, apiErrorMessage } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import { Radio, Search, FileWarning, Video } from 'lucide-react'
 import clsx from 'clsx'
@@ -18,13 +18,28 @@ export default function IntelligencePage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('ALL')
   const [recordsOnly, setRecordsOnly] = useState(false)
   const [allEvents, setAllEvents] = useState<IntelligenceEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    intelligenceApi.listEvents({ limit: 100 }).then(r => {
-      if (r.data?.events?.length) {
-        setAllEvents(r.data.events)
-      }
-    }).catch(() => {})
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    intelligenceApi.listEvents({ limit: 200 })
+      .then(r => {
+        if (cancelled) return
+        setAllEvents(r.data?.events ?? [])
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        // RNP_PATROL has no `intelligence:read`, so this legitimately 403s for
+        // that role. Discarding the error showed them an empty feed that looked
+        // like the database had nothing in it.
+        setError(apiErrorMessage(e, 'Could not load intelligence events.'))
+        setAllEvents([])
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   const events = allEvents.filter(e => {
@@ -114,10 +129,24 @@ export default function IntelligencePage() {
               </tr>
             </thead>
             <tbody>
-              {events.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-500 text-xs" aria-busy="true">
+                    Loading intelligence events…
+                  </td>
+                </tr>
+              )}
+              {!loading && error && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-red-300 text-xs">{error}</td>
+                </tr>
+              )}
+              {!loading && !error && events.length === 0 && (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
-                    No events match the current filters.
+                    {allEvents.length === 0
+                      ? 'No intelligence events are on record.'
+                      : 'No events match the current filters.'}
                   </td>
                 </tr>
               )}
@@ -130,8 +159,11 @@ export default function IntelligencePage() {
                     {ev.suspect_name ?? <span className="text-slate-500 italic">Unknown</span>}
                   </td>
                   <td className="py-2.5 hidden sm:table-cell">
-                    {ev.ims_reference
-                      ? <span className="font-mono text-rnp text-[10px]">{ev.ims_reference}</span>
+                    {/* The API returns the joined suspect's reference as
+                        `suspect_ims_reference`; `ims_reference` is not a column
+                        on intelligence_events, so this cell was always "—". */}
+                    {ev.suspect_ims_reference
+                      ? <span className="font-mono text-rnp text-[10px]">{ev.suspect_ims_reference}</span>
                       : <span className="text-slate-600">—</span>
                     }
                   </td>
