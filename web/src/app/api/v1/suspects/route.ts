@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError, getPagination } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
+import { assertRwLocations } from '@/lib/rw-locations-server'
+import { allowedClearances } from '@/lib/rbac'
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/suspects
@@ -22,9 +24,24 @@ export const GET = withAuth(async (req: NextRequest, { user }) => {
       .select('*', { count: 'exact' })
       .range(offset, offset + pageSize - 1)
       .order('created_at', { ascending: false })
+      // A suspect record classified above the caller's clearance must not be
+      // listed. This was unenforced, so every role saw every TOP_SECRET file.
+      .in('clearance_level', allowedClearances(user.clearance))
 
     if (status) query = query.eq('status', status)
-    if (name) query = query.ilike('full_name', `%${name}%`)
+    // `name` matched full_name only, so a search box offering "name, alias or
+    // IMS reference" could only ever be honoured by narrowing an already
+    // fetched page in the browser. Cover all three here instead.
+    if (name) {
+      // Commas and parentheses terminate a PostgREST filter list — stripping
+      // them stops a search box from appending predicates of its own.
+      const safe = name.replace(/[,()*]/g, ' ').trim()
+      if (safe) {
+        query = query.or(
+          `full_name.ilike.%${safe}%,ims_reference.ilike.%${safe}%,aliases.cs.{${safe}}`
+        )
+      }
+    }
     if (clearance_level) query = query.eq('clearance_level', clearance_level)
     if (institution) query = query.eq('owning_institution', institution)
 
@@ -76,6 +93,18 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
 
     if (!first_name || !last_name || !owning_institution) {
       return apiError('first_name, last_name, and owning_institution are required', 400)
+    }
+
+    // The addresses are folded into `notes` for storage, but the structured
+    // chains are sent alongside so they can be checked against the official
+    // dataset — a village name alone does not identify a place.
+    const locationCheck = assertRwLocations([
+      { label: 'Place of birth', value: body.birthplace, depth: 'district' },
+      { label: 'Residential address', value: body.residence },
+      { label: 'Domicile address', value: body.domicile },
+    ])
+    if (!locationCheck.ok) {
+      return apiError(locationCheck.errors.join('; '), 400)
     }
 
     const supabase = createServerSupabaseClient()
