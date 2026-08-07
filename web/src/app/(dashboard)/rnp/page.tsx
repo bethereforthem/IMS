@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { statsApi, suspectsApi, warrantsApi, cameraApi } from '@/lib/api'
+import { statsApi, suspectsApi, warrantsApi, cameraApi, apiErrorMessage } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
@@ -35,6 +35,15 @@ function SkeletonCard() {
   return <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 h-24 animate-pulse" />
 }
 
+/** A warrant is only active while its flag is set and its expiry has not passed. */
+function warrantStatus(w: Record<string, unknown>): 'ACTIVE' | 'EXPIRED' {
+  if (w.active !== true) return 'EXPIRED'
+  if (w.expires_at == null) return 'ACTIVE'   // open-ended warrant
+  const expiry = new Date(String(w.expires_at))
+  if (Number.isNaN(expiry.getTime())) return 'ACTIVE'
+  return expiry.getTime() > Date.now() ? 'ACTIVE' : 'EXPIRED'
+}
+
 export default function RNPOperations() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -45,6 +54,7 @@ export default function RNPOperations() {
   const [cameras, setCameras] = useState<CameraNode[]>([])
   const [showAddSuspect, setShowAddSuspect] = useState(false)
   const [showAddWarrant, setShowAddWarrant] = useState(false)
+  const [error, setError] = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
@@ -55,12 +65,20 @@ export default function RNPOperations() {
       warrantsApi.list({ active: true, limit: 20 }),
       cameraApi.list(),
     ]).then(([s, w, e, wa, c]) => {
+      // Assign every result unconditionally. The `?.length &&` guards meant a
+      // panel that came back empty kept rendering the previous load's rows, so
+      // after a refresh the dashboard could still show suspects, warrants or
+      // cameras that no longer matched the database.
       if (s.data) setStats(s.data)
-      if (w.data?.suspects?.length) setWanted(w.data.suspects)
-      if (e.data?.length) setEvents(e.data)
-      if (wa.data?.warrants?.length) setWarrants(wa.data.warrants)
-      if (c.data?.length) setCameras(c.data as CameraNode[])
-    }).catch(console.error)
+      setWanted(w.data?.suspects ?? [])
+      setEvents(e.data ?? [])
+      setWarrants(wa.data?.warrants ?? [])
+      setCameras((c.data ?? []) as CameraNode[])
+      setError('')
+    }).catch((err: unknown) => {
+      console.error('[rnp/dashboard]', err)
+      setError(apiErrorMessage(err, 'Could not load the operations dashboard.'))
+    })
       .finally(() => setLoading(false))
   }, [])
 
@@ -100,6 +118,17 @@ export default function RNPOperations() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
+          <span>{error}</span>
+          <button
+            onClick={load}
+            className="shrink-0 rounded-lg border border-red-800 px-3 py-1 text-xs font-medium text-red-200 hover:bg-red-950/40"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {showAddSuspect && (
         <AddSuspectModal
           onClose={() => setShowAddSuspect(false)}
@@ -216,7 +245,7 @@ export default function RNPOperations() {
                       ? 'border-red-900/50 bg-red-950/20'
                       : 'border-slate-800 bg-slate-800/50'
                   )}>
-                  <Shield className={clsx('h-4 w-4 shrink-0', THREAT_COLOR[s.threat_level] ?? 'text-slate-400')} />
+                  <Shield className={clsx('h-4 w-4 shrink-0', THREAT_COLOR[s.threat_level ?? 0] ?? 'text-slate-400')} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-white truncate">{s.full_name}</p>
@@ -233,7 +262,7 @@ export default function RNPOperations() {
                     <div className="flex items-center gap-0.5 mt-1 justify-end">
                       {Array.from({ length: 5 }).map((_, i) => (
                         <div key={i} className={clsx('h-1.5 w-1.5 rounded-full',
-                          i < s.threat_level ? 'bg-red-500' : 'bg-slate-700')} />
+                          i < (s.threat_level ?? 0) ? 'bg-red-500' : 'bg-slate-700')} />
                       ))}
                     </div>
                   </div>
@@ -384,21 +413,33 @@ export default function RNPOperations() {
                         )}
                       </td>
                       <td className="py-2.5 text-slate-400 max-w-[180px] truncate">{String(w.charges ?? '—')}</td>
-                      <td className="py-2.5 text-slate-400">{String(w.warrant_type ?? 'ARREST')}</td>
+                      {/* warrant_type and priority are both NOT NULL columns, so
+                          these `?? 'ARREST'` / `?? 'HIGH'` defaults could only
+                          ever fire if the field were missing from the response —
+                          in which case inventing a value is worse than saying so.
+                          The two pages showing this same field even disagreed:
+                          'HIGH' here against 'MEDIUM' on the warrants page. */}
+                      <td className="py-2.5 text-slate-400">{String(w.warrant_type ?? '—')}</td>
                       <td className="py-2.5">
                         <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded',
                           w.priority === 'CRITICAL' ? 'bg-red-950 text-red-400' :
                           w.priority === 'HIGH' ? 'bg-amber-950 text-amber-400' :
                           'bg-slate-800 text-slate-400')}>
-                          {String(w.priority ?? 'HIGH')}
+                          {String(w.priority ?? '—')}
                         </span>
                       </td>
                       <td className="py-2.5 text-slate-500 whitespace-nowrap">
                         {w.issued_at ? formatDistanceToNow(new Date(String(w.issued_at)), { addSuffix: true }) : '—'}
                       </td>
                       <td className="py-2.5">
-                        <span className="text-xs font-bold text-amber-400 bg-amber-950 px-2 py-0.5 rounded">
-                          ACTIVE
+                        {/* This cell was the literal string "ACTIVE" on every
+                            row regardless of the record. Derive it instead, from
+                            the stored flag and the expiry date together. */}
+                        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded',
+                          warrantStatus(w) === 'ACTIVE'
+                            ? 'text-amber-400 bg-amber-950'
+                            : 'text-slate-400 bg-slate-800')}>
+                          {warrantStatus(w)}
                         </span>
                       </td>
                     </tr>
