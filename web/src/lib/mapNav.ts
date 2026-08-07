@@ -5,8 +5,12 @@
  * Leaflet map used by the IMS dashboards:
  *
  *  • location search (Nominatim via /api/v1/geo/search)
- *  • driving directions with multiple waypoints (OSRM via /api/v1/geo/route)
+ *  • directions with multiple waypoints (OSRM via /api/v1/geo/route)
+ *  • travel modes — driving, cycling, walking — each routed on its own profile,
+ *    with the other two priced alongside so the time and distance by every
+ *    means are visible at once
  *  • highlighted route polyline + total / per-leg distance and ETA
+ *  • turn-by-turn directions for the selected mode
  *  • click-to-pick waypoints, draggable A/1/2/B markers
  *  • responsive collapsible panel (desktop + mobile)
  *
@@ -62,12 +66,75 @@ const PANEL_CSS = `
   .ims-nav-leg { color:#67e8f9; font-size:10px; }
   .ims-nav-hint { font-size:10px; color:#64748b; line-height:1.4; }
   .ims-nav-spin { color:#38bdf8; font-size:11px; }
+
+  /* travel mode selector */
+  .ims-nav-modes { display:flex; gap:4px; background:#1e293b; border-radius:8px; padding:3px; }
+  .ims-nav-mode { flex:1; display:flex; flex-direction:column; align-items:center; gap:1px; background:none;
+    border:none; border-radius:6px; color:#64748b; cursor:pointer; padding:5px 2px; font-family:inherit; transition:all .15s; }
+  .ims-nav-mode:hover { background:#334155; color:#cbd5e1; }
+  .ims-nav-mode.on { background:#0ea5e9; color:#fff; }
+  .ims-nav-mode .ico { font-size:14px; line-height:1; }
+  .ims-nav-mode .eta { font-size:9px; font-weight:800; letter-spacing:.2px; }
+  .ims-nav-mode .dst { font-size:8px; opacity:.75; }
+  .ims-nav-mode.none { opacity:.4; cursor:not-allowed; }
+
+  /* turn-by-turn */
+  .ims-nav-steps { border:1px solid #164e63; border-radius:7px; overflow:hidden; }
+  .ims-nav-steps-head { display:flex; align-items:center; gap:6px; background:#0b2a3a; padding:6px 9px;
+    font-size:10px; font-weight:700; color:#7dd3fc; cursor:pointer; user-select:none; letter-spacing:.3px; }
+  .ims-nav-steps-head b { flex:1; }
+  .ims-nav-steps-list { max-height:180px; overflow-y:auto; background:#041824; }
+  .ims-nav-step { display:flex; gap:7px; padding:5px 9px; font-size:10px; color:#cbd5e1; border-top:1px solid #0b2a3a; line-height:1.35; }
+  .ims-nav-step .n { color:#0ea5e9; font-weight:800; min-width:14px; }
+  .ims-nav-step .d { color:#64748b; margin-left:auto; white-space:nowrap; }
   @media (max-width: 640px) { .ims-nav-panel { width:230px; } .ims-nav-body { max-height:38vh; } }
 `
+
+/** Travel modes offered, matching the profiles /api/v1/geo/route can route on. */
+const MODES = [
+  { id: 'car',  icon: '🚗', name: 'Drive' },
+  { id: 'bike', icon: '🚲', name: 'Cycle' },
+  { id: 'foot', icon: '🚶', name: 'Walk'  },
+] as const
+type ModeId = typeof MODES[number]['id']
+
+/** Route line colour per mode, so the drawn path reads as the chosen means. */
+const MODE_COLOR: Record<ModeId, { line: string; casing: string }> = {
+  car:  { line: '#38bdf8', casing: '#082f49' },
+  bike: { line: '#34d399', casing: '#022c22' },
+  foot: { line: '#fbbf24', casing: '#451a03' },
+}
+
+interface ModeSummary { distance_m: number; duration_s: number; label: string }
+interface RouteStep { instruction: string; distance_m: number; duration_s: number; leg: number }
+interface RouteResponse {
+  mode: ModeId
+  mode_label: string
+  distance_m: number
+  duration_s: number
+  coordinates: [number, number][]
+  legs: Array<{ distance_m: number; duration_s: number }>
+  steps: RouteStep[]
+  by_mode: Record<string, ModeSummary | null>
+}
 
 function authHeaders(): Record<string, string> {
   const token = document.cookie.split('; ').find(r => r.startsWith('ims_access_token='))?.split('=')[1]
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+/**
+ * Escape before interpolating into panel HTML. Place names come from Nominatim
+ * and step instructions carry OpenStreetMap road names — both are third-party
+ * strings being written straight into innerHTML.
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function fmtDistance(m: number): string {
@@ -98,6 +165,10 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
   let routeSeq = 0
   let searchSeq = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let mode: ModeId = 'car'
+  let stepsOpen = false
+  /** Last per-mode summary, so switching modes redraws the selector instantly. */
+  let lastByMode: Record<string, ModeSummary | null> | null = null
 
   // ── panel DOM ───────────────────────────────────────────────────────────────
   const NavControl = L.Control.extend({
@@ -110,13 +181,23 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
           <input class="ims-nav-input" data-nav="search" type="text" placeholder="Search place, district, landmark…" autocomplete="off" />
           <div class="ims-nav-results" data-nav="results"></div>
           <div data-nav="waypoints" style="display:flex;flex-direction:column;gap:5px"></div>
+          <div class="ims-nav-modes" data-nav="modes">
+            ${MODES.map(m => `
+              <button class="ims-nav-mode${m.id === 'car' ? ' on' : ''}" data-mode="${m.id}" title="${m.name}">
+                <span class="ico">${m.icon}</span>
+                <span class="eta">${m.name}</span>
+                <span class="dst"></span>
+              </button>`).join('')}
+          </div>
           <div class="ims-nav-btns">
             <button class="ims-nav-btn pick" data-nav="pick">📍 Pick on map</button>
             <button class="ims-nav-btn clear" data-nav="clearbtn">✕ Clear</button>
           </div>
           <div data-nav="stats"></div>
+          <div data-nav="steps"></div>
           <div class="ims-nav-hint" data-nav="hint">Search a place or enable “Pick on map”, then click the map to set
-            Start → stops → Destination. The driving route, distance and ETA appear automatically.</div>
+            Start → stops → Destination. The route is drawn automatically, with the time and distance by car, bicycle
+            and on foot shown side by side.</div>
         </div>`
       L.DomEvent.disableClickPropagation(el)
       L.DomEvent.disableScrollPropagation(el)
@@ -184,7 +265,7 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
       row.className = 'ims-nav-wprow'
       row.innerHTML = `
         <div class="ims-nav-wpbadge" style="background:${color}">${text}</div>
-        <span class="lbl" title="${wp.label}">${wp.label}</span>
+        <span class="lbl" title="${escapeHtml(wp.label)}">${escapeHtml(wp.label)}</span>
         <button title="Remove">✕</button>`
       row.querySelector('button')!.addEventListener('click', () => {
         if (wp.marker) map.removeLayer(wp.marker)
@@ -205,20 +286,71 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
     void updateRoute()
   }
 
+  // ── travel mode selector ───────────────────────────────────────────────────
+  /** Paint each mode button with its own time and distance for this route. */
+  function renderModeSummaries(byMode: Record<string, ModeSummary | null> | null) {
+    MODES.forEach(m => {
+      const btn = panel.querySelector(`[data-mode="${m.id}"]`) as HTMLElement | null
+      if (!btn) return
+      const eta = btn.querySelector('.eta') as HTMLElement
+      const dst = btn.querySelector('.dst') as HTMLElement
+      btn.classList.toggle('on', m.id === mode)
+
+      if (!byMode) { eta.textContent = m.name; dst.textContent = ''; btn.classList.remove('none'); return }
+
+      const summary = byMode[m.id]
+      if (!summary) {
+        // The profile reported no route — say so rather than leaving the button
+        // looking like it simply had not been tried.
+        eta.textContent = '—'
+        dst.textContent = 'no route'
+        btn.classList.add('none')
+        return
+      }
+      btn.classList.remove('none')
+      eta.textContent = fmtDuration(summary.duration_s).replace(' min', 'm').replace(' h ', 'h')
+      dst.textContent = fmtDistance(summary.distance_m)
+    })
+  }
+
+  panel.querySelectorAll('[data-mode]').forEach(el => {
+    el.addEventListener('click', () => {
+      const next = (el as HTMLElement).dataset.mode as ModeId
+      if (!next || next === mode) return
+      mode = next
+      renderModeSummaries(lastByMode)
+      void updateRoute()
+    })
+  })
+
   // ── routing ────────────────────────────────────────────────────────────────
   async function updateRoute() {
     const seq = ++routeSeq
     const stats = $('stats')
+    const stepsBox = $('steps')
 
     if (routeLine) { map.removeLayer(routeLine); routeLine = null }
     if (routeLineCasing) { map.removeLayer(routeLineCasing); routeLineCasing = null }
 
-    if (waypoints.length < 2) { stats.innerHTML = ''; return }
+    if (waypoints.length < 2) {
+      stats.innerHTML = ''
+      stepsBox.innerHTML = ''
+      lastByMode = null
+      renderModeSummaries(null)
+      return
+    }
 
-    stats.innerHTML = '<div class="ims-nav-spin">⏳ Calculating driving route…</div>'
+    const active = MODES.find(m => m.id === mode)!
+    stats.innerHTML = `<div class="ims-nav-spin">⏳ Calculating ${active.name.toLowerCase()} route…</div>`
+    stepsBox.innerHTML = ''
     try {
       const points = waypoints.map(w => `${w.lng.toFixed(6)},${w.lat.toFixed(6)}`).join(';')
-      const r = await fetch(`/api/v1/geo/route?points=${encodeURIComponent(points)}`, { headers: authHeaders() })
+      // `compare=true` prices the other two modes in the same round trip, so the
+      // selector can show how long the journey takes by each means at once.
+      const r = await fetch(
+        `/api/v1/geo/route?points=${encodeURIComponent(points)}&mode=${mode}&compare=true`,
+        { headers: authHeaders() },
+      )
       const data = await r.json()
       if (seq !== routeSeq) return
       if (!r.ok) {
@@ -227,14 +359,26 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
         return
       }
 
-      // highlighted polyline: dark casing + bright route line
-      routeLineCasing = L.polyline(data.coordinates, { color: '#082f49', weight: 9, opacity: 0.75 }).addTo(map)
-      routeLine = L.polyline(data.coordinates, { color: '#38bdf8', weight: 5, opacity: 0.95 }).addTo(map)
+      const route = data as RouteResponse
+      lastByMode = route.by_mode ?? null
+      renderModeSummaries(lastByMode)
+
+      // highlighted polyline: dark casing + bright route line, coloured by mode
+      const colors = MODE_COLOR[mode]
+      routeLineCasing = L.polyline(route.coordinates, { color: colors.casing, weight: 9, opacity: 0.75 }).addTo(map)
+      routeLine = L.polyline(route.coordinates, {
+        color: colors.line,
+        weight: 5,
+        opacity: 0.95,
+        // Walking legs often follow paths that are not roads; a dashed line
+        // makes that visually distinct from a driveable route.
+        dashArray: mode === 'foot' ? '10 7' : undefined,
+      }).addTo(map)
       map.fitBounds(routeLine.getBounds(), { padding: [46, 46] })
 
-      const legsHtml = data.legs.length > 1
+      const legsHtml = route.legs.length > 1
         ? `<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px">` +
-          data.legs.map((leg: { distance_m: number; duration_s: number }, i: number) => {
+          route.legs.map((leg, i) => {
             const from = badgeFor(i, waypoints.length).text
             const to = badgeFor(i + 1, waypoints.length).text
             return `<div class="ims-nav-leg">${from} → ${to}: ${fmtDistance(leg.distance_m)} · ${fmtDuration(leg.duration_s)}</div>`
@@ -242,14 +386,45 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
         : ''
 
       stats.innerHTML = `<div class="ims-nav-stats">
-        🚗 <b>${fmtDistance(data.distance_m)}</b> &nbsp;·&nbsp; ⏱ <b>${fmtDuration(data.duration_s)}</b>
-        <div style="color:#67e8f9;font-size:10px;margin-top:2px">Driving · fastest route</div>${legsHtml}</div>`
+        ${active.icon} <b>${fmtDistance(route.distance_m)}</b> &nbsp;·&nbsp; ⏱ <b>${fmtDuration(route.duration_s)}</b>
+        <div style="color:#67e8f9;font-size:10px;margin-top:2px">${escapeHtml(route.mode_label)} · fastest route</div>${legsHtml}</div>`
+
+      renderSteps(route.steps ?? [])
     } catch {
       if (seq === routeSeq) {
         stats.innerHTML = `<div class="ims-nav-stats" style="color:#fca5a5;border-color:#7f1d1d;background:#2a0e0e">
           ⚠ Routing service unreachable</div>`
       }
     }
+  }
+
+  /** Collapsible turn-by-turn list for the drawn route. */
+  function renderSteps(steps: RouteStep[]) {
+    const box = $('steps')
+    if (!steps.length) { box.innerHTML = ''; return }
+
+    box.innerHTML = `
+      <div class="ims-nav-steps">
+        <div class="ims-nav-steps-head" data-nav="stepstoggle">
+          <b>🧾 DIRECTIONS (${steps.length})</b><span data-nav="stepchev">${stepsOpen ? '▾' : '▸'}</span>
+        </div>
+        <div class="ims-nav-steps-list" data-nav="stepslist" style="display:${stepsOpen ? 'block' : 'none'}">
+          ${steps.map((s, i) => `
+            <div class="ims-nav-step">
+              <span class="n">${i + 1}</span>
+              <span>${escapeHtml(s.instruction)}</span>
+              ${s.distance_m > 0 ? `<span class="d">${fmtDistance(s.distance_m)}</span>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>`
+
+    box.querySelector('[data-nav="stepstoggle"]')!.addEventListener('click', () => {
+      stepsOpen = !stepsOpen
+      const list = box.querySelector('[data-nav="stepslist"]') as HTMLElement
+      const chev = box.querySelector('[data-nav="stepchev"]') as HTMLElement
+      list.style.display = stepsOpen ? 'block' : 'none'
+      chev.textContent = stepsOpen ? '▾' : '▸'
+    })
   }
 
   // ── pick-on-map mode ───────────────────────────────────────────────────────
@@ -299,13 +474,13 @@ export function attachMapNavigation(leaflet: L, map: Obj): MapNavHandle {
         const item = document.createElement('div')
         item.className = 'ims-nav-result'
         const short = res.name.split(',').slice(0, 3).join(',')
-        item.innerHTML = `<span style="flex:1" title="${res.name}">📌 ${short}</span><button>+ Route</button>`
+        item.innerHTML = `<span style="flex:1" title="${escapeHtml(res.name)}">📌 ${escapeHtml(short)}</span><button>+ Route</button>`
         // click the row → fly there and drop a reference marker
         item.addEventListener('click', () => {
           map.flyTo([res.lat, res.lng], Math.max(map.getZoom(), 14), { duration: 1.2 })
           if (searchMarker) map.removeLayer(searchMarker)
           searchMarker = L.marker([res.lat, res.lng]).addTo(map)
-            .bindPopup(`<b style="font-size:12px">${short}</b>`).openPopup()
+            .bindPopup(`<b style="font-size:12px">${escapeHtml(short)}</b>`).openPopup()
         })
         // “+ Route” → append as the next waypoint
         item.querySelector('button')!.addEventListener('click', ev => {
