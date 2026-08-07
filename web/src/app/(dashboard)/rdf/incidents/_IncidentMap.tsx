@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
+import { attachBaseLayers } from '@/lib/mapBaseLayers'
+import { attachMapNavigation, type MapNavHandle } from '@/lib/mapNav'
 import { formatDistanceToNow } from 'date-fns'
 import type { WebFieldReport, ActiveAgent } from '@/lib/api'
 
@@ -58,6 +60,7 @@ function injectMapKeyframes() {
 export default function RDFIncidentMap({ reports, agents, borderPosts, onSelectReport }: RDFIncidentMapProps) {
   const divRef         = useRef<HTMLDivElement>(null)
   const mapRef         = useRef<LeafletMap>(null)
+  const navRef         = useRef<MapNavHandle | null>(null)
   const reportLayer    = useRef<LayerGroup>(null)
   const agentLayer     = useRef<LayerGroup>(null)
   const borderLayer    = useRef<LayerGroup>(null)
@@ -84,21 +87,27 @@ export default function RDFIncidentMap({ reports, agents, borderPosts, onSelectR
       })
 
       // Dark basemap
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        opacity: 0.9,
-      }).addTo(map)
+      // This map had one hard-coded basemap and no way to change it. The shared
+      // set gives it satellite, streets and terrain like every other map.
+      attachBaseLayers(L, map, { initial: '🌑 Dark (Tactical)' })
 
       reportLayer.current = L.layerGroup().addTo(map)
       agentLayer.current  = L.layerGroup().addTo(map)
       borderLayer.current = L.layerGroup().addTo(map)
+
+      // Search + multi-modal directions: draw a path to an incident and see how
+      // long it takes to reach by car, bicycle or on foot.
+      navRef.current = attachMapNavigation(L, map)
 
       injectMapKeyframes()
       mapRef.current = map
       setMapReady(true)
     })
 
-    return () => { mapRef.current?.remove(); mapRef.current = null }
+    return () => {
+      navRef.current?.destroy(); navRef.current = null
+      mapRef.current?.remove(); mapRef.current = null
+    }
   }, [])
 
   // Draw border post markers (static)
