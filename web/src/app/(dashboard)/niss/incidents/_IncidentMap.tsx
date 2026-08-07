@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
+import { createBaseLayers } from '@/lib/mapBaseLayers'
 import { formatDistanceToNow } from 'date-fns'
 import type { WebFieldReport, ActiveAgent } from '@/lib/api'
 
@@ -31,7 +32,7 @@ type LeafletMap = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LayerGroup = any
 
-// Inject emergency pin keyframe animations once per page load
+// Inject emergency pin keyframes + dark control styling once per page load
 let _mapCssInjected = false
 function injectMapKeyframes() {
   if (_mapCssInjected || typeof document === 'undefined') return
@@ -49,23 +50,110 @@ function injectMapKeyframes() {
       100% { box-shadow: 0 0 0 0 rgba(245,158,11,0), 0 0 20px rgba(245,158,11,0.6); }
     }
     .rescue-map-pin { animation: rescue-pulse-ring 1.0s ease-in-out infinite !important; }
+
+    /* Match the dark chrome the other operational maps use */
+    .incident-map .leaflet-control-zoom a,
+    .incident-map .leaflet-control-fullscreen a {
+      background:#1e293b !important; color:#cbd5e1 !important;
+      border-color:#334155 !important;
+    }
+    .incident-map .leaflet-control-zoom a:hover,
+    .incident-map .leaflet-control-fullscreen a:hover {
+      background:#334155 !important; color:#fff !important;
+    }
+    .incident-map .leaflet-control-fullscreen a {
+      font-size:16px; line-height:26px; text-align:center;
+      width:30px; height:30px; display:block; text-decoration:none;
+      font-weight:700;
+    }
+    .incident-map .leaflet-control-layers {
+      background:#0f172a !important; color:#cbd5e1 !important;
+      border:1px solid #334155 !important; border-radius:6px !important;
+    }
+    .incident-map .leaflet-control-layers-expanded { padding:8px 10px !important; }
+    .incident-map .leaflet-control-layers label { font-size:11px; margin-bottom:2px; }
+    .incident-map .leaflet-control-layers-separator { border-top:1px solid #334155 !important; }
+    .incident-map .leaflet-control-attribution {
+      background:rgba(15,23,42,0.75) !important; color:#64748b !important;
+    }
+    .incident-map .leaflet-control-attribution a { color:#94a3b8 !important; }
+    .incident-map .leaflet-control-scale-line {
+      background:rgba(15,23,42,0.75) !important; color:#cbd5e1 !important;
+      border-color:#475569 !important;
+    }
+    .incident-map .leaflet-popup-content-wrapper {
+      border-radius:4px !important; box-shadow:0 4px 20px rgba(0,0,0,0.5) !important;
+    }
+    .incident-map .leaflet-popup-tip-container { display:none; }
   `
   document.head.appendChild(style)
   _mapCssInjected = true
 }
 
 export default function IncidentMap({ reports, agents, onSelectReport }: IncidentMapProps) {
-  const divRef           = useRef<HTMLDivElement>(null)
-  const mapRef           = useRef<LeafletMap>(null)
-  const reportLayerRef   = useRef<LayerGroup>(null)
-  const agentLayerRef    = useRef<LayerGroup>(null)
-  const [mapReady, setMapReady] = useState(false)
+  const divRef             = useRef<HTMLDivElement>(null)
+  const mapRef             = useRef<LeafletMap>(null)
+  const reportLayerRef     = useRef<LayerGroup>(null)
+  const agentLayerRef      = useRef<LayerGroup>(null)
+  const fullscreenBtnRef   = useRef<HTMLAnchorElement | null>(null)
+  // Held in a ref so the Leaflet control (created once) always calls the
+  // current toggle rather than a stale closure.
+  const toggleFullscreenRef = useRef<(() => void) | null>(null)
+  const [mapReady, setMapReady]   = useState(false)
+  const [maximised, setMaximised] = useState(false)
+
+  toggleFullscreenRef.current = () => setMaximised(v => !v)
+
+  // Keep the control's icon and tooltip in step with the current state, and
+  // let Leaflet re-measure after the container changes size.
+  useEffect(() => {
+    const btn = fullscreenBtnRef.current
+    if (btn) {
+      btn.innerHTML = maximised ? '⤫' : '⛶'
+      btn.title = maximised ? 'Restore map' : 'Maximise map'
+      btn.setAttribute('aria-label', btn.title)
+    }
+    // Wait for the container to settle at its new size before re-measuring,
+    // otherwise Leaflet caches the old dimensions and tiles come out grey.
+    const id = requestAnimationFrame(() => mapRef.current?.invalidateSize())
+    return () => cancelAnimationFrame(id)
+  }, [maximised, mapReady])
+
+  // Escape exits, and the page behind must not scroll while maximised.
+  useEffect(() => {
+    if (!maximised) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMaximised(false) }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [maximised])
 
   // Initialise Leaflet once
   useEffect(() => {
-    if (!divRef.current || mapRef.current) return
+    const container = divRef.current
+    if (!container || mapRef.current) return
+
+    // The dynamic import resolves asynchronously; under StrictMode's double
+    // mount the container can already be detached by then, which is what made
+    // Leaflet throw "Map container not found".
+    let cancelled = false
 
     import('leaflet').then(L => {
+      if (cancelled || !container.isConnected || mapRef.current) return
+      // Leaflet stamps `_leaflet_id` on a container it owns. A Fast Refresh
+      // that swaps this module without running cleanup leaves the old map
+      // attached, and re-initialising the same node throws "Map container is
+      // already initialized" — so adopt-and-reset rather than assume.
+      const stamped = container as HTMLDivElement & { _leaflet_id?: number }
+      if (stamped._leaflet_id != null) {
+        delete stamped._leaflet_id
+        container.innerHTML = ''
+      }
+
       // Fix default icon paths
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -75,35 +163,75 @@ export default function IncidentMap({ reports, agents, onSelectReport }: Inciden
         shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       })
 
-      const map = L.map(divRef.current!, {
+      injectMapKeyframes()
+
+      const map = L.map(container, {
         center: [-1.9403, 29.8739],   // Rwanda centre
         zoom: 9,
         zoomControl: true,
-        attributionControl: false,
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
+        wheelPxPerZoomLevel: 100,
       })
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        opacity: 0.5,
-      }).addTo(map)
+      // One base layer at full opacity. Previously an OSM layer at 0.5 opacity
+      // sat under a dark layer at 0.85, so street names showed through washed
+      // out and half-covered — the map read as muddy at every zoom level.
+      // Shared across every dashboard map — see lib/mapBaseLayers.ts.
+      // These two default to the tactical dark basemap rather than satellite.
+      const { layers: baseLayers, initialLayer } = createBaseLayers(L, { initial: '🌑 Dark (Tactical)' })
+      initialLayer.addTo(map)
 
-      // Dark overlay via CartoDB
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        opacity: 0.85,
-      }).addTo(map)
+      const reportLayer = L.layerGroup().addTo(map)
+      const agentLayer  = L.layerGroup().addTo(map)
+      reportLayerRef.current = reportLayer
+      agentLayerRef.current  = agentLayer
 
-      reportLayerRef.current = L.layerGroup().addTo(map)
-      agentLayerRef.current  = L.layerGroup().addTo(map)
+      L.control.layers(
+        baseLayers as never,
+        { '📍 Incident Reports': reportLayer, '📡 Field Agents GPS': agentLayer } as never,
+        { position: 'topright', collapsed: true },
+      ).addTo(map)
 
-      injectMapKeyframes()
+      L.control.scale({ position: 'bottomleft', metric: true, imperial: false }).addTo(map)
+
+      // Maximise / restore, rendered as a Leaflet control so it stacks under
+      // the zoom buttons instead of floating over the layer switcher.
+      const FullscreenControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd() {
+          const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-fullscreen')
+          const btn = L.DomUtil.create('a', '', bar) as HTMLAnchorElement
+          btn.href = '#'
+          btn.setAttribute('role', 'button')
+          btn.innerHTML = '⛶'
+          btn.title = 'Maximise map'
+          btn.setAttribute('aria-label', 'Maximise map')
+          fullscreenBtnRef.current = btn
+          L.DomEvent.disableClickPropagation(bar)
+          L.DomEvent.on(btn, 'click', (e: Event) => {
+            L.DomEvent.stop(e)
+            toggleFullscreenRef.current?.()
+          })
+          return bar
+        },
+      })
+      new FullscreenControl().addTo(map)
+
       mapRef.current = map
       setMapReady(true)
     })
 
     return () => {
-      mapRef.current?.remove()
-      mapRef.current = null
+      cancelled = true
+      if (mapRef.current) {
+        mapRef.current.remove()
+        mapRef.current = null
+      }
+      reportLayerRef.current = null
+      agentLayerRef.current  = null
+      fullscreenBtnRef.current = null
+      setMapReady(false)
     }
   }, [])
 
@@ -299,9 +427,35 @@ export default function IncidentMap({ reports, agents, onSelectReport }: Inciden
 
   return (
     <div
-      ref={divRef}
-      style={{ width: '100%', height: '100%', borderRadius: '12px', minHeight: '480px' }}
-    />
+      className={maximised
+        ? 'fixed inset-0 z-[10000] bg-slate-950 p-3 flex flex-col gap-2'
+        : 'w-full h-full'}
+    >
+      {maximised && (
+        <div className="flex items-center justify-between shrink-0 px-1">
+          <p className="text-xs font-bold text-white uppercase tracking-wider">
+            Field Incidents — Full Screen
+          </p>
+          <button
+            onClick={() => setMaximised(false)}
+            className="text-[11px] text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition"
+          >
+            Exit full screen · Esc
+          </button>
+        </div>
+      )}
+      <div
+        ref={divRef}
+        className="incident-map"
+        style={{
+          width: '100%',
+          height: '100%',
+          flex: maximised ? '1 1 auto' : undefined,
+          borderRadius: maximised ? '8px' : '12px',
+          minHeight: maximised ? 0 : '480px',
+        }}
+      />
+    </div>
   )
 }
 
