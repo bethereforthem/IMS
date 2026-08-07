@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
+import { attachBaseLayers } from '@/lib/mapBaseLayers'
 import type { AIPrediction } from '@/lib/api'
 
 export interface PredictionZoneMapProps {
@@ -67,9 +68,9 @@ export default function PredictionZoneMap({ predictions, onSelectPrediction, sel
         zoomControl: true,
         attributionControl: false,
       })
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, opacity: 0.9,
-      }).addTo(map)
+      // This map had one hard-coded basemap and no way to change it. The shared
+      // set gives it satellite, streets and terrain like every other map.
+      attachBaseLayers(L, map, { initial: '🌑 Dark (Tactical)' })
       zoneLayerRef.current = L.layerGroup().addTo(map)
       pinLayerRef.current  = L.layerGroup().addTo(map)
       injectPredictionCSS()
