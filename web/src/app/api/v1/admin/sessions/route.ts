@@ -24,11 +24,34 @@ export const GET = withAuth(
       query = query.eq('institution', institution)
     }
 
-    const { data: sessions, error } = await query
+    // `count` used to be the length of the (limited) page, so any caller
+    // rendering it as "active sessions" under-reported as soon as there were
+    // more sessions than the limit. Ask the database for the real total —
+    // alongside the page, not after it.
+    let countQuery = db
+      .from('user_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('revoked', false)
+      .gt('expires_at', new Date().toISOString())
+
+    if (institution) countQuery = countQuery.eq('institution', institution)
+
+    const [
+      { data: sessions, error },
+      { count: totalCount, error: countError },
+    ] = await Promise.all([query, countQuery])
 
     if (error) return apiError('Failed to fetch sessions', 500)
+    if (countError) console.error('[admin/sessions] count query failed:', countError.message)
 
-    return apiSuccess({ sessions: sessions ?? [], count: sessions?.length ?? 0 })
+    const total = countError ? (sessions?.length ?? 0) : (totalCount ?? 0)
+
+    return apiSuccess({
+      sessions: sessions ?? [],
+      count: total,
+      returned: sessions?.length ?? 0,
+      truncated: total > (sessions?.length ?? 0),
+    })
   },
   'admin:read'
 )
