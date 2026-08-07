@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit, extractAuditContext } from '@/lib/audit'
+import { invalidateSessionCache } from '@/lib/access-enforcement'
 import type { AuthPayload } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
@@ -38,6 +39,9 @@ export const DELETE = withAuth(
       .eq('id', sessionId)
 
     if (error) return apiError('Failed to revoke session', 500)
+
+    // Effective on the next request rather than after the cache TTL.
+    invalidateSessionCache(sessionId)
 
     await logAudit({
       event_type:  'ADMIN_ACTION',
