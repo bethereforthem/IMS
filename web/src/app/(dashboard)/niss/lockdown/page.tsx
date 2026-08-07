@@ -1,9 +1,15 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { adminApi } from '@/lib/api'
 import { Lock, AlertTriangle, Shield } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+interface Cosigner {
+  id: string
+  full_name: string
+  badge_number: string | null
+}
 
 export default function EmergencyLockdown() {
   const { user } = useAuth()
@@ -11,8 +17,31 @@ export default function EmergencyLockdown() {
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [cosigners, setCosigners] = useState<Cosigner[]>([])
+  const [cosignersLoading, setCosignersLoading] = useState(true)
+  const [cosignersError, setCosignersError] = useState<string | null>(null)
 
   const isDirector = user?.role === 'NISS_DIRECTOR'
+
+  // The co-signing director is read from the user directory — never typed in
+  // by hand, and never taken from seed data.
+  useEffect(() => {
+    if (!isDirector) { setCosignersLoading(false); return }
+    let alive = true
+    adminApi.getLockdownCosigners()
+      .then(r => {
+        if (!alive) return
+        setCosigners(r.data?.directors ?? [])
+        setCosignersError(null)
+      })
+      .catch((err: unknown) => {
+        if (!alive) return
+        const detail = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+        setCosignersError(detail ?? 'Could not load the director directory.')
+      })
+      .finally(() => { if (alive) setCosignersLoading(false) })
+    return () => { alive = false }
+  }, [isDirector])
 
   const handleLockdown = async () => {
     if (!reason || !secondDirectorId) {
@@ -63,19 +92,40 @@ export default function EmergencyLockdown() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase text-slate-400 mb-1.5">
-            Second NISS Director — User ID
+          <label htmlFor="cosigner" className="block text-xs font-semibold uppercase text-slate-400 mb-1.5">
+            Co-signing NISS Director
           </label>
-          <input
-            type="text"
+          <select
+            id="cosigner"
             value={secondDirectorId}
             onChange={e => setSecondDirectorId(e.target.value)}
-            placeholder="UUID of second director"
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-red-500 focus:outline-none"
-          />
-          <p className="text-[11px] text-slate-500 mt-1">
-            Sample IDs: Check seed_users.sql for NISS-DIR-001 / NISS-DIR-002 UUIDs
-          </p>
+            disabled={cosignersLoading || cosigners.length === 0}
+            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-white focus:border-red-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option value="">
+              {cosignersLoading
+                ? 'Loading directors…'
+                : cosigners.length === 0
+                  ? 'No other director available'
+                  : 'Select co-signing director'}
+            </option>
+            {cosigners.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.full_name}{d.badge_number ? ` · ${d.badge_number}` : ''}
+              </option>
+            ))}
+          </select>
+          {cosignersError ? (
+            <p className="text-[11px] text-red-400 mt-1">{cosignersError}</p>
+          ) : (
+            <p className="text-[11px] text-slate-500 mt-1">
+              {cosignersLoading
+                ? 'Reading the directory…'
+                : cosigners.length === 0
+                  ? 'Lockdown needs a second active NISS director on the system.'
+                  : `${cosigners.length} director${cosigners.length === 1 ? '' : 's'} available to co-sign.`}
+            </p>
+          )}
         </div>
 
         <div>
