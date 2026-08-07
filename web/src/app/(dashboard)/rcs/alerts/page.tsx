@@ -2,10 +2,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { StatCard } from '@/components/shared/StatCard'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
-import { alertsApi } from '@/lib/api'
+import { alertsApi, apiErrorMessage } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
-  Bell, ShieldAlert, AlertTriangle, Info, Zap, Radio, X,
+  Bell, ShieldAlert, AlertTriangle, Info, Zap, Radio, X, Search, Loader2, Check,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { Alert, AlertSeverity } from '@/types'
@@ -32,19 +33,28 @@ function SeverityIcon({ severity, className }: { severity: AlertSeverity; classN
 }
 
 export default function RcsAlertsPage() {
+  const { user } = useAuth()
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('ALL')
   const [unreadOnly, setUnreadOnly]         = useState(false)
+  const [actionOnly, setActionOnly]         = useState(false)
+  const [search, setSearch]                 = useState('')
   const [allAlerts, setAllAlerts]           = useState<Alert[]>([])
-  const [readState, setReadState]           = useState<Record<string, boolean>>({})
   const [newBanner, setNewBanner]           = useState(0)
+  const [loading, setLoading]               = useState(true)
+  const [error, setError]                   = useState<string | null>(null)
+  const [acking, setAcking]                 = useState<Record<string, boolean>>({})
+  const [expanded, setExpanded]             = useState<Record<string, boolean>>({})
 
   const seenIdsRef     = useRef<Set<string>>(new Set())
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const canAcknowledge = user?.role === 'RCS_SUPERINTENDENT'
+
   const fetchAlerts = useCallback(() => {
-    alertsApi.list({ limit: 200 }).then(r => {
-      if (!r.data?.alerts?.length) return
-      const fetched: Alert[] = r.data.alerts
+    return alertsApi.list({ limit: 200 }).then(r => {
+      // An empty result is a real state — the feed used to keep the previous
+      // list on screen when the server returned nothing.
+      const fetched: Alert[] = r.data?.alerts ?? []
       const newIds = fetched.filter(a => !seenIdsRef.current.has(a.id))
       if (newIds.length > 0 && seenIdsRef.current.size > 0) {
         setNewBanner(newIds.length)
@@ -53,12 +63,10 @@ export default function RcsAlertsPage() {
       }
       fetched.forEach(a => seenIdsRef.current.add(a.id))
       setAllAlerts(fetched)
-      setReadState(prev => {
-        const next = { ...prev }
-        fetched.forEach((a: Alert) => { if (!(a.id in next)) next[a.id] = a.is_read })
-        return next
-      })
-    }).catch(() => {})
+      setError(null)
+    }).catch(err => {
+      setError(apiErrorMessage(err, 'Could not load alerts.'))
+    }).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -67,15 +75,48 @@ export default function RcsAlertsPage() {
     return () => { clearInterval(id); if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current) }
   }, [fetchAlerts])
 
+  /**
+   * Acknowledge an alert. This used to flip a piece of component state and
+   * nothing else — the alert stayed unread in the database, came back unread on
+   * the next 30-second poll, and no other officer ever saw that it had been
+   * seen. `is_read` is one-way on the server (it also records who read it and
+   * when, and writes an ALERT_ACKNOWLEDGED audit entry), so there is no
+   * "mark unread" to offer.
+   */
+  async function acknowledge(id: string) {
+    setAcking(s => ({ ...s, [id]: true }))
+    setAllAlerts(prev => prev.map(a => (a.id === id ? { ...a, is_read: true } : a)))
+    try {
+      await alertsApi.markRead(id)
+      await fetchAlerts()
+    } catch (err) {
+      // Put it back — the operator must not be shown an acknowledgement that
+      // never reached the database.
+      setAllAlerts(prev => prev.map(a => (a.id === id ? { ...a, is_read: false } : a)))
+      setError(apiErrorMessage(err, 'Could not acknowledge the alert.'))
+    } finally {
+      setAcking(s => {
+        const next = { ...s }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
+  const query = search.trim().toLowerCase()
   const alerts = allAlerts.filter(a => {
-    const isRead = readState[a.id] !== undefined ? readState[a.id] : a.is_read
     const matchSeverity = severityFilter === 'ALL' || a.severity === severityFilter
-    const matchUnread   = !unreadOnly || !isRead
-    return matchSeverity && matchUnread
+    const matchUnread   = !unreadOnly || !a.is_read
+    const matchAction   = !actionOnly || a.requires_action
+    const matchSearch   = !query ||
+      a.title.toLowerCase().includes(query) ||
+      a.message.toLowerCase().includes(query) ||
+      (a.suspect_name ?? '').toLowerCase().includes(query)
+    return matchSeverity && matchUnread && matchAction && matchSearch
   })
 
   const totalCount    = allAlerts.length
-  const unreadCount   = allAlerts.filter(a => !(readState[a.id] !== undefined ? readState[a.id] : a.is_read)).length
+  const unreadCount   = allAlerts.filter(a => !a.is_read).length
   const actionCount   = allAlerts.filter(a => a.requires_action).length
   const criticalCount = allAlerts.filter(a => a.severity === 'CRITICAL').length
 
@@ -118,7 +159,16 @@ export default function RcsAlertsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center flex-wrap">
+        <div className="relative min-w-[200px]">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search title, message or suspect…"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-rcs/50"
+          />
+        </div>
         <div className="flex gap-1 flex-wrap">
           {(['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as SeverityFilter[]).map(f => (
             <button
@@ -146,19 +196,47 @@ export default function RcsAlertsPage() {
         >
           {unreadOnly ? '● ' : '○ '}Unread Only
         </button>
+        <button
+          onClick={() => setActionOnly(v => !v)}
+          className={clsx(
+            'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border',
+            actionOnly
+              ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+              : 'border-slate-700 bg-slate-800 text-slate-400 hover:text-slate-200'
+          )}
+        >
+          {actionOnly ? '● ' : '○ '}Action Required
+        </button>
       </div>
 
-      <p className="text-xs text-slate-500">Showing {alerts.length} of {totalCount} alerts</p>
+      <p className="text-xs text-slate-500">
+        {loading ? 'Loading…' : `Showing ${alerts.length} of ${totalCount} alerts`}
+      </p>
+
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => { setLoading(true); fetchAlerts() }} className="ml-auto text-xs underline hover:text-red-100">
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Alert Cards */}
       <div className="space-y-3">
-        {alerts.length === 0 && (
+        {loading && Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-28 rounded-xl bg-slate-900 border border-slate-800 animate-pulse" />
+        ))}
+
+        {!loading && !error && alerts.length === 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-sm text-slate-500">
-            No alerts match the current filters.
+            {totalCount === 0 ? 'No alerts have been raised for RCS.' : 'No alerts match the current filters.'}
           </div>
         )}
-        {alerts.map(a => {
-          const isRead       = readState[a.id] !== undefined ? readState[a.id] : a.is_read
+        {!loading && alerts.map(a => {
+          const isRead       = a.is_read
+          const isExpanded   = expanded[a.id] === true
           const srcInst      = alertSourceInstitution(a)
           const fwdFrom      = parseForwardedFrom(a.title)
           const cleanedTitle = stripFwdPrefix(a.title)
@@ -190,16 +268,38 @@ export default function RcsAlertsPage() {
                           Action Required
                         </span>
                       )}
-                      {isRead && <span className="text-[10px] text-slate-500">Read</span>}
                     </div>
-                    <button
-                      onClick={() => setReadState(s => ({ ...s, [a.id]: !isRead }))}
-                      className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors shrink-0"
-                    >
-                      {isRead ? 'Mark Unread' : 'Mark Read'}
-                    </button>
+                    {isRead ? (
+                      <span className="flex items-center gap-1 text-[10px] text-green-500 shrink-0">
+                        <Check className="h-3 w-3" /> Acknowledged
+                      </span>
+                    ) : canAcknowledge ? (
+                      <button
+                        onClick={() => acknowledge(a.id)}
+                        disabled={acking[a.id]}
+                        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 rounded px-2 py-1 transition-colors shrink-0 disabled:opacity-50"
+                      >
+                        {acking[a.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                        Acknowledge
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-slate-600 shrink-0">Unread</span>
+                    )}
                   </div>
-                  <p className="text-xs text-slate-400 mt-1.5 leading-relaxed line-clamp-3">{a.message}</p>
+                  <p className={clsx(
+                    'text-xs text-slate-400 mt-1.5 leading-relaxed whitespace-pre-wrap',
+                    !isExpanded && 'line-clamp-3'
+                  )}>
+                    {a.message}
+                  </p>
+                  {a.message.length > 180 && (
+                    <button
+                      onClick={() => setExpanded(s => ({ ...s, [a.id]: !isExpanded }))}
+                      className="text-[10px] text-rcs hover:underline mt-1"
+                    >
+                      {isExpanded ? 'Show less' : 'Show full detail'}
+                    </button>
+                  )}
                   <div className="flex items-center gap-3 mt-2 flex-wrap">
                     <SourceTagBadge tag={a.source_tag} />
                     {a.suspect_name && (
@@ -212,6 +312,11 @@ export default function RcsAlertsPage() {
                       {' · '}
                       {format(new Date(a.created_at), 'MMM dd HH:mm')}
                     </span>
+                    {isRead && a.read_at && (
+                      <span className="text-[10px] text-slate-600">
+                        Acknowledged {format(new Date(a.read_at), 'MMM dd HH:mm')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -225,12 +330,12 @@ export default function RcsAlertsPage() {
         <div className="flex items-start gap-3">
           <Radio className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-amber-400 mb-1">RFID Escape Detection — Active</p>
+            <p className="text-sm font-bold text-amber-400 mb-1">Escape Alerting</p>
             <p className="text-xs text-amber-300/70 leading-relaxed">
-              All facility gates are equipped with RFID readers. Unauthorized gate events automatically trigger
-              a CRITICAL alert and notify the RCS duty officer. The perimeter detection system operates 24/7
-              with a response window of less than 30 seconds. Any inmate wristband detected outside authorized
-              zones generates an immediate lockdown protocol alert.
+              Setting an inmate&apos;s custody status to ESCAPED writes the escape timestamp to the custody
+              record and raises a CRITICAL alert to RCS, RNP, NISS and RDF, recorded in the audit trail.
+              RFID wristband gate detection is not yet connected — escapes are reported by an officer until
+              facility readers are integrated.
             </p>
           </div>
         </div>
