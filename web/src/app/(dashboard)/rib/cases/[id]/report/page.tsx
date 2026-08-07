@@ -13,6 +13,8 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { format } from 'date-fns'
+import LocationSelector from '@/components/shared/LocationSelector'
+import { rwLocationFrom } from '@/lib/rw-locations'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,10 +105,8 @@ interface ReportState {
   documents: Record<string, DocEntry>
 }
 
-const PROVINCES = [
-  'Kigali City', 'Northern Province', 'Southern Province',
-  'Eastern Province', 'Western Province',
-]
+// Province/district/sector/cell/village options now come from the official
+// dataset via <LocationSelector> — see lib/rw-locations.ts.
 
 // ─── Style constants ────────────────────────────────────────────────────────────
 
@@ -277,38 +277,16 @@ function PersonForm({
               <input value={person.country} onChange={e => s('country', e.target.value)}
                 className={INP} placeholder="Rwanda" />
             </div>
-            <div>
-              <label className={LBL}>Province</label>
-              <select value={person.province} onChange={e => s('province', e.target.value)} className={SEL}>
-                <option value="">— Select —</option>
-                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
           </div>
 
-          <div className={G3}>
-            <div>
-              <label className={LBL}>District</label>
-              <input value={person.district} onChange={e => s('district', e.target.value)}
-                className={INP} placeholder="District" />
-            </div>
-            <div>
-              <label className={LBL}>Sector</label>
-              <input value={person.sector} onChange={e => s('sector', e.target.value)}
-                className={INP} placeholder="Sector" />
-            </div>
-            <div>
-              <label className={LBL}>Cell</label>
-              <input value={person.cell} onChange={e => s('cell', e.target.value)}
-                className={INP} placeholder="Cell" />
-            </div>
-          </div>
-
-          <div>
-            <label className={LBL}>Village</label>
-            <input value={person.village} onChange={e => s('village', e.target.value)}
-              className={INP} placeholder="Village name" />
-          </div>
+          {/* Rwandan address, cascading from the official
+              Province > District > Sector > Cell > Village list */}
+          <LocationSelector
+            idPrefix={`person-${person.id}-address`}
+            value={rwLocationFrom(person)}
+            onChange={next => onUpdate({ ...person, ...next })}
+            classNames={{ label: LBL, select: SEL }}
+          />
 
           <div>
             <label className={LBL}>Residential Address</label>
@@ -735,8 +713,12 @@ export default function InvestigationReportPage() {
       setSubmitDone(true)
       setSaveMsg('Investigation submitted')
       setTimeout(() => setSaveMsg(null), 4000)
-    } catch {
-      setSubmitError('Failed to submit. Report saved locally.')
+    } catch (err: unknown) {
+      // A 400 here is usually server-side validation — e.g. a location chain
+      // that does not exist in the official dataset. Show what was rejected
+      // rather than a generic failure.
+      const detail = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setSubmitError(detail ?? 'Failed to submit. Report saved locally.')
     } finally {
       setSaving(false)
     }
@@ -994,44 +976,17 @@ export default function InvestigationReportPage() {
               <input type="time" value={report.crime_info.time_of_crime}
                 onChange={e => upd('crime_info', { ...report.crime_info, time_of_crime: e.target.value })} className={INP} />
             </div>
-            <div>
-              <label className={LBL}>Province</label>
-              <select value={report.crime_info.province}
-                onChange={e => upd('crime_info', { ...report.crime_info, province: e.target.value })} className={SEL}>
-                <option value="">— Select —</option>
-                {PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
           </div>
 
-          <div className={G3}>
-            <div>
-              <label className={LBL}>District</label>
-              <input value={report.crime_info.district}
-                onChange={e => upd('crime_info', { ...report.crime_info, district: e.target.value })}
-                className={INP} placeholder="District" />
-            </div>
-            <div>
-              <label className={LBL}>Sector</label>
-              <input value={report.crime_info.sector}
-                onChange={e => upd('crime_info', { ...report.crime_info, sector: e.target.value })}
-                className={INP} placeholder="Sector" />
-            </div>
-            <div>
-              <label className={LBL}>Cell</label>
-              <input value={report.crime_info.cell}
-                onChange={e => upd('crime_info', { ...report.crime_info, cell: e.target.value })}
-                className={INP} placeholder="Cell" />
-            </div>
-          </div>
+          {/* Crime scene, cascading from the official administrative list */}
+          <LocationSelector
+            idPrefix="crime-scene"
+            value={rwLocationFrom(report.crime_info)}
+            onChange={next => upd('crime_info', { ...report.crime_info, ...next })}
+            classNames={{ label: LBL, select: SEL }}
+          />
 
           <div className={G2}>
-            <div>
-              <label className={LBL}>Village</label>
-              <input value={report.crime_info.village}
-                onChange={e => upd('crime_info', { ...report.crime_info, village: e.target.value })}
-                className={INP} placeholder="Village" />
-            </div>
             <div>
               <label className={LBL}>GPS Coordinates (optional)</label>
               <div className="flex gap-2">
