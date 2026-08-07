@@ -22,7 +22,9 @@ function toFieldAgent(a: ActiveAgent): FieldAgent {
     id: a.session_id,
     name: a.agent_name ?? 'Unknown Agent',
     badge: a.agent_badge ?? '—',
-    institution: a.agent_institution ?? 'NISS',
+    // Never default this to NISS — an agent whose institution is missing would
+    // otherwise be misattributed to the console operator's own service.
+    institution: a.agent_institution ?? 'UNKNOWN',
     lat: a.last_lat ?? 0,
     lng: a.last_lng ?? 0,
     status,
@@ -35,7 +37,16 @@ interface DirectPanel {
   agent: FieldAgent
   message: string
   sent: boolean
+  sending: boolean
+  error: string | null
+  /** Set from the server response — the order was recorded but the agent's
+   *  device is not currently reachable. */
+  agentOffline: boolean
 }
+
+const newDirectPanel = (agent: FieldAgent): DirectPanel => ({
+  agent, message: '', sent: false, sending: false, error: null, agentOffline: false,
+})
 
 export default function NISSLocationPage() {
   const { user } = useAuth()
@@ -56,7 +67,7 @@ export default function NISSLocationPage() {
       ])
       if (locRes.status === 'fulfilled') {
         const d = locRes.value.data
-        if (Array.isArray(d) && d.length) setLocations(d)
+        if (Array.isArray(d)) setLocations(d)
       }
       if (agentRes.status === 'fulfilled') {
         const d = agentRes.value.data?.agents ?? []
@@ -97,11 +108,24 @@ export default function NISSLocationPage() {
   const mapAgents    = agents.filter(a => a.status === 'ACTIVE' || a.status === 'SOS')
   const cctvHits     = locations.filter(e => e.source_tag === 'CCTV_NODE').length
 
-  const handleTransmit = () => {
-    if (!direction?.message.trim()) return
-    // TODO: POST to /api/v1/field-agents/{id}/directive
-    setDirection(prev => prev ? { ...prev, sent: true } : null)
-    setTimeout(() => setDirection(null), 2500)
+  const handleTransmit = async () => {
+    if (!direction || !direction.message.trim() || direction.sending) return
+    // FieldAgent.id is the tracking session id (see toFieldAgent).
+    const sessionId = direction.agent.id
+    setDirection(prev => prev ? { ...prev, sending: true, error: null } : null)
+    try {
+      const res = await agentTrackingApi.sendDirective(sessionId, direction.message.trim())
+      setDirection(prev => prev
+        ? { ...prev, sending: false, sent: true, agentOffline: Boolean(res.data?.agent_offline) }
+        : null)
+      // Leave an offline warning on screen long enough to be read.
+      setTimeout(() => setDirection(null), res.data?.agent_offline ? 6000 : 2500)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setDirection(prev => prev
+        ? { ...prev, sending: false, error: detail ?? 'Transmission failed. The directive was not sent.' }
+        : null)
+    }
   }
 
   return (
@@ -118,7 +142,7 @@ export default function NISSLocationPage() {
             </p>
           </div>
           <button
-            onClick={() => setDirection({ agent: sosAgents[0], message: '', sent: false })}
+            onClick={() => setDirection(newDirectPanel(sosAgents[0]))}
             className="shrink-0 text-xs bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 font-bold transition"
           >
             DIRECT NOW
@@ -178,7 +202,7 @@ export default function NISSLocationPage() {
             locations={locations}
             agents={mapAgents}
             alertEvents={alertEvents}
-            onDirectAgent={(agent) => setDirection({ agent, message: '', sent: false })}
+            onDirectAgent={(agent) => setDirection(newDirectPanel(agent))}
           />
         </div>
 
@@ -215,7 +239,7 @@ export default function NISSLocationPage() {
                     {agent.heading && ` · ${agent.heading}`}
                   </p>
                   <button
-                    onClick={() => setDirection({ agent, message: '', sent: false })}
+                    onClick={() => setDirection(newDirectPanel(agent))}
                     className={`w-full mt-0.5 text-[10px] py-1 border font-bold tracking-wider transition ${
                       isSOS
                         ? 'bg-red-950 hover:bg-red-900 text-red-400 border-red-800'
@@ -348,25 +372,51 @@ export default function NISSLocationPage() {
                     <textarea
                       rows={4}
                       value={direction.message}
+                      disabled={direction.sending}
                       onChange={e => setDirection(prev => prev ? { ...prev, message: e.target.value } : null)}
-                      placeholder={`Enter directive for ${direction.agent.name.split(' ')[1]}...\ne.g. "Move to grid 29.87, -1.95. Suspect spotted at Kimironko market. Approach from north. Await backup."`}
-                      className="w-full bg-slate-800 border border-slate-700 text-white text-xs px-3 py-2.5 resize-none focus:outline-none focus:border-blue-500 font-mono leading-relaxed placeholder:text-slate-600"
+                      placeholder={'Enter the order for this agent…\ne.g. "Move to grid 29.87, -1.95. Suspect spotted at Kimironko market. Approach from north. Await backup."'}
+                      className="w-full bg-slate-800 border border-slate-700 text-white text-xs px-3 py-2.5 resize-none focus:outline-none focus:border-blue-500 font-mono leading-relaxed placeholder:text-slate-600 disabled:opacity-60"
                     />
                   </div>
+
+                  {direction.error && (
+                    <div className="bg-red-950/60 border border-red-700 rounded-lg px-3 py-2.5 flex gap-2 items-start" role="alert">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-red-300 leading-relaxed">{direction.error}</p>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleTransmit}
-                    disabled={!direction.message.trim()}
+                    disabled={!direction.message.trim() || direction.sending}
                     className="w-full py-2.5 text-sm font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white flex items-center justify-center gap-2 transition"
                   >
-                    <Send className="h-4 w-4" />
-                    TRANSMIT DIRECTIVE
+                    {direction.sending ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        TRANSMITTING…
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        {direction.error ? 'RETRY TRANSMISSION' : 'TRANSMIT DIRECTIVE'}
+                      </>
+                    )}
                   </button>
                 </>
+              ) : direction.agentOffline ? (
+                <div className="bg-amber-950/60 border border-amber-700 rounded-lg px-4 py-4 text-center space-y-1">
+                  <p className="text-sm font-bold text-amber-400">⚠ DIRECTIVE RECORDED — AGENT OFFLINE</p>
+                  <p className="text-xs text-amber-600/90 leading-relaxed">
+                    {direction.agent.name} is not currently reachable. The order is logged and will
+                    reach {direction.agent.institution} when the device reconnects — follow up by radio.
+                  </p>
+                </div>
               ) : (
                 <div className="bg-green-950/60 border border-green-700 rounded-lg px-4 py-4 text-center space-y-1">
                   <p className="text-sm font-bold text-green-400">✓ DIRECTIVE TRANSMITTED</p>
                   <p className="text-xs text-green-600">
-                    Encrypted message sent to {direction.agent.name}
+                    Sent to {direction.agent.name} · {direction.agent.institution}
                   </p>
                 </div>
               )}
