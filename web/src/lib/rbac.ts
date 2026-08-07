@@ -28,6 +28,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'audit:read',
     'alerts:read', 'alerts:acknowledge',
     'camera_nodes:manage', 'source_attribution:read',
+    'intel:events:write',
     'field_reports:read', 'field_reports:write', 'field_reports:assign',
     'agent_tracking:read', 'agent_tracking:manage',
     'commander_rescue:trigger',
@@ -46,6 +47,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'audit:read',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'intel:events:write',
     'field_reports:read', 'field_reports:write', 'field_reports:assign',
     'agent_tracking:read', 'agent_tracking:manage',
     'commander_rescue:trigger',
@@ -63,6 +65,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'alerts:read', 'alerts:acknowledge',
     'audit:read:own_institution',
     'source_attribution:read',
+    'intel:events:write',
     'field_reports:read', 'field_reports:write',
     'agent_tracking:read',
     'commander_rescue:trigger',
@@ -78,6 +81,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'watchlist:read', 'watchlist:write',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'intel:events:write',
     'field_reports:read', 'field_reports:write',
     'agent_tracking:read',
     'commander_rescue:trigger',
@@ -103,6 +107,7 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'revocation:own',
     'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
+    'intel:events:write',
     'field_reports:read',
     'commander_rescue:trigger',
     'ai_intelligence:read', 'ai_intelligence:analyze',
@@ -113,9 +118,15 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'cases:read',
     'nid:scan',
     'watchlist:read',
-    'alerts:read',
+    'alerts:read', 'alerts:acknowledge',
     'source_attribution:read',
     'field_reports:read',
+    // The RIB Analysis Unit menu offers an AI Intelligence page, but this was
+    // the only institution role in the system without the permission behind it
+    // — every peer analyst-grade role (NISS_OFFICER, RNP_DETECTIVE,
+    // RIB_INVESTIGATOR) already has both. Without them the page 403'd on load
+    // and the module was unreachable for the role it exists for.
+    'ai_intelligence:read', 'ai_intelligence:analyze',
   ]),
 
   RDF_COMMANDER: new Set([
@@ -163,6 +174,13 @@ export const PERMISSIONS: Record<string, Set<string>> = {
     'corrections:read', 'corrections:write',
     'nid:scan',
     'watchlist:read',
+    // The RCS menu offers Alerts to every RCS role and the Custody Overview
+    // renders an alert feed and a dashboard stat block, but neither endpoint
+    // was reachable without this — a correction officer got a 403 on
+    // /alerts and on /dashboard/stats, so their overview showed
+    // "Could not load statistics" and their Alerts page was permanently empty.
+    // Read-only: acknowledging an alert stays with the superintendent.
+    'alerts:read',
   ]),
 
   VILLAGE_LEADER: new Set([
@@ -203,6 +221,22 @@ export const CLEARANCE_RANK: Record<string, number> = {
   CONFIDENTIAL: 1,
   SECRET: 2,
   TOP_SECRET: 3,
+}
+
+/**
+ * The classifications a holder of `clearance` may read.
+ *
+ * `CLEARANCE_RANK` existed but nothing compared a record's classification
+ * against the caller's clearance, so every classified row on `suspects`,
+ * `cases` and `intelligence_events` was readable by anyone who could reach the
+ * endpoint — an UNCLASSIFIED patrol officer included.
+ *
+ * Unknown or missing clearance falls back to UNCLASSIFIED: a token that does
+ * not say what it is cleared for gets the least access, never the most.
+ */
+export function allowedClearances(clearance: string | undefined | null): string[] {
+  const rank = CLEARANCE_RANK[clearance ?? ''] ?? CLEARANCE_RANK.UNCLASSIFIED
+  return Object.keys(CLEARANCE_RANK).filter(level => CLEARANCE_RANK[level] <= rank)
 }
 
 // ---------------------------------------------------------------------------
