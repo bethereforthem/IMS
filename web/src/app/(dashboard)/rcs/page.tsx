@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
-import { statsApi, correctionsApi } from '@/lib/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { statsApi, correctionsApi, apiErrorMessage } from '@/lib/api'
 import { StatCard } from '@/components/shared/StatCard'
 import { AlertFeed } from '@/components/shared/AlertFeed'
 import { AddCorrectionModal } from '@/components/shared/AddCorrectionModal'
@@ -10,10 +10,13 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
-import { Users, AlertTriangle, FileText, Shield, Calendar, Clock, Plus, Eye, Download, Loader2, Search } from 'lucide-react'
+import {
+  Users, AlertTriangle, Shield, Calendar, Clock, Plus, Eye, Download, Loader2,
+  Search, DoorOpen, ArrowRightLeft, RefreshCw, Building2,
+} from 'lucide-react'
 import { format } from 'date-fns'
 import clsx from 'clsx'
-import type { DashboardStats } from '@/types'
+import type { DashboardStats, CustodyStats } from '@/types'
 
 const THREAT_LABEL: Record<number, string> = { 1: 'MINIMAL', 2: 'LOW', 3: 'MEDIUM', 4: 'HIGH', 5: 'CRITICAL' }
 const THREAT_COLOR: Record<number, string> = {
@@ -23,22 +26,32 @@ const THREAT_COLOR: Record<number, string> = {
   4: 'text-orange-400 bg-orange-950',
   5: 'text-red-400 bg-red-950',
 }
+const STATUS_COLOR: Record<string, string> = {
+  PRE_TRIAL:   'text-blue-400 bg-blue-950',
+  SENTENCED:   'text-purple-400 bg-purple-950',
+  RELEASED:    'text-slate-400 bg-slate-800',
+  TRANSFERRED: 'text-cyan-400 bg-cyan-950',
+  ESCAPED:     'text-red-400 bg-red-950',
+  DECEASED:    'text-slate-400 bg-slate-800',
+}
+
+const IN_CUSTODY_STATUSES = 'PRE_TRIAL,SENTENCED'
+const ROSTER_PAGE_SIZE = 50
 
 type CorrectionRecord = {
   id: string
   suspect_id: string
-  full_name?: string
-  ims_reference?: string
-  facility?: string
-  facility_name?: string
-  cell_block?: string
-  status?: string
-  custody_status?: string
-  intake_date?: string
-  sentence_years?: number
-  next_review?: string
-  next_review_date?: string
-  threat_level?: number
+  full_name?: string | null
+  ims_reference?: string | null
+  facility?: string | null
+  facility_name?: string | null
+  cell_block?: string | null
+  status?: string | null
+  custody_status?: string | null
+  intake_date?: string | null
+  sentence_years?: number | null
+  next_review?: string | null
+  threat_level?: number | null
 }
 
 function SkeletonCard() {
@@ -48,65 +61,87 @@ function SkeletonCard() {
 export default function RCSCustody() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [corrections, setCorrections] = useState<CorrectionRecord[]>([])
+  const [custody, setCustody] = useState<CustodyStats | null>(null)
+  const [roster, setRoster] = useState<CorrectionRecord[]>([])
+  const [rosterTotal, setRosterTotal] = useState(0)
+  const [reviews, setReviews] = useState<CorrectionRecord[]>([])
   const [showAddInmate, setShowAddInmate] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [inmateSearch, setInmateSearch] = useState('')
+  const [searching, setSearching] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
+
+  // The roster search runs on the server so it covers every record, not just
+  // the page that happened to be loaded — debounced so typing is not a request
+  // per keystroke.
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [appliedSearch, setAppliedSearch] = useState('')
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => setAppliedSearch(inmateSearch.trim()), 350)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [inmateSearch])
+
+  const loadRoster = useCallback((q: string) => {
+    setSearching(true)
+    return correctionsApi
+      .list({ custody_status: IN_CUSTODY_STATUSES, limit: ROSTER_PAGE_SIZE, q: q || undefined, sort: 'intake_date', order: 'desc' })
+      .then(r => {
+        setRoster((r.data?.records ?? []) as unknown as CorrectionRecord[])
+        setRosterTotal(r.data?.total ?? 0)
+      })
+      .finally(() => setSearching(false))
+  }, [])
 
   const load = useCallback(() => {
     setLoading(true)
+    setError(null)
     Promise.all([
-      statsApi.getDashboard(),
-      correctionsApi.list({ limit: 50 }),
-    ]).then(([s, c]) => {
-      if (s.data) setStats(s.data)
-      if (c.data?.records?.length) setCorrections(c.data.records as CorrectionRecord[])
-    }).catch(console.error)
+      statsApi.getDashboard().catch(() => null),
+      correctionsApi.stats(),
+      correctionsApi.list({ custody_status: IN_CUSTODY_STATUSES, limit: ROSTER_PAGE_SIZE, sort: 'intake_date', order: 'desc' }),
+      // Reviews are ordered by review date on the server, so the panel shows the
+      // genuinely next reviews rather than the earliest among one page.
+      correctionsApi.list({ custody_status: IN_CUSTODY_STATUSES, limit: 25, sort: 'next_review', order: 'asc' }),
+    ])
+      .then(([s, c, list, rev]) => {
+        if (s?.data) setStats(s.data)
+        if (c.data) setCustody(c.data)
+        setRoster((list.data?.records ?? []) as unknown as CorrectionRecord[])
+        setRosterTotal(list.data?.total ?? 0)
+        setReviews((rev.data?.records ?? []) as unknown as CorrectionRecord[])
+      })
+      .catch(err => setError(apiErrorMessage(err, 'Could not load custody data.')))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  const preTrialCount = corrections.filter(c =>
-    (c.status ?? c.custody_status) === 'PRE_TRIAL'
-  ).length
-  const sentencedCount = corrections.filter(c =>
-    (c.status ?? c.custody_status) === 'SENTENCED'
-  ).length
-  // Historical records (released / transferred / deceased) are not in custody
-  const inCustodyCount = corrections.filter(c =>
-    ['PRE_TRIAL', 'SENTENCED'].includes((c.status ?? c.custody_status) as string)
-  ).length
-  const upcomingReviews = corrections.filter(c => {
-    const reviewDate = new Date(c.next_review ?? c.next_review_date ?? '')
-    if (isNaN(reviewDate.getTime())) return false
-    const diffDays = Math.ceil((reviewDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-    return diffDays >= 0 && diffDays <= 14
-  })
-
-  // Compute monthly intake/releases from corrections records
-  const intakeData = (() => {
-    const months: Record<string, { month: string; intake: number; releases: number }> = {}
-    const now = new Date()
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const key = d.toLocaleDateString('en-RW', { month: 'short' })
-      months[key] = { month: key, intake: 0, releases: 0 }
-    }
-    corrections.forEach(c => {
-      if (c.intake_date) {
-        const d = new Date(c.intake_date)
-        const key = d.toLocaleDateString('en-RW', { month: 'short' })
-        if (months[key]) months[key].intake++
-      }
-    })
-    return Object.values(months)
-  })()
+  useEffect(() => {
+    if (loading) return
+    loadRoster(appliedSearch).catch(() => {})
+    // `loading` is deliberately excluded: this reacts to the search term only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedSearch, loadRoster])
 
   const canWrite = ['RCS_SUPERINTENDENT', 'RCS_OFFICER'].includes(user?.role ?? '')
+
+  // Upcoming reviews inside the window the API reports, so the card and the
+  // panel can never disagree about what "upcoming" means.
+  const reviewWindow = custody?.review_window_days ?? 14
+  const upcomingReviews = reviews
+    .map(r => {
+      const d = new Date(r.next_review ?? '')
+      if (isNaN(d.getTime())) return null
+      const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+      return { record: r, date: d, days }
+    })
+    .filter((x): x is { record: CorrectionRecord; date: Date; days: number } =>
+      x !== null && x.days >= 0 && x.days <= reviewWindow)
 
   async function handleDownloadPdf(e: React.MouseEvent, id: string) {
     e.stopPropagation()
@@ -116,22 +151,12 @@ export default function RCSCustody() {
       const r = await correctionsApi.get(id)
       await generateCustodyPdf(r.data as Record<string, unknown>)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'PDF generation failed'
-      setPdfError(msg)
+      setPdfError(apiErrorMessage(err, 'PDF generation failed'))
       setTimeout(() => setPdfError(null), 5000)
     } finally {
       setDownloadingId(null)
     }
   }
-
-  const filteredCorrections = corrections.filter(c => {
-    const q = inmateSearch.trim().toLowerCase()
-    if (!q) return true
-    return (
-      (c.full_name ?? '').toLowerCase().includes(q) ||
-      (c.ims_reference ?? '').toLowerCase().includes(q)
-    )
-  })
 
   return (
     <div className="space-y-6">
@@ -171,6 +196,15 @@ export default function RCSCustody() {
               Intake Inmate
             </button>
           )}
+          <button
+            onClick={load}
+            disabled={loading}
+            title="Reload custody data"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:border-slate-500 transition disabled:opacity-50"
+          >
+            <RefreshCw className={clsx('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
           <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800 px-3 py-1.5 rounded-lg">
             <div className="h-1.5 w-1.5 rounded-full bg-rcs animate-pulse" />
             Custody Management
@@ -178,50 +212,76 @@ export default function RCSCustody() {
         </div>
       </div>
 
-      {/* Stats */}
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-700/60 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+          <button onClick={load} className="ml-auto text-xs underline hover:text-red-100">Retry</button>
+        </div>
+      )}
+
+      {/* Population */}
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
-      ) : stats ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="In Custody" value={inCustodyCount} icon={Shield} variant="warn"
-            sub={`${preTrialCount} pre-trial · ${sentencedCount} sentenced`} />
-          <StatCard label="Alerts Today" value={stats.alerts_today} icon={AlertTriangle}
-            variant={stats.critical_alerts > 0 ? 'danger' : 'ok'} />
-          <StatCard label="Upcoming Reviews" value={upcomingReviews.length} icon={Calendar}
-            variant={upcomingReviews.length > 0 ? 'warn' : 'ok'}
-            sub="Within 14 days" />
-          <StatCard label="Active Warrants" value={stats.active_warrants} icon={FileText} />
-        </div>
+      ) : custody ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Current Population" value={custody.in_custody} icon={Shield} variant="warn"
+              sub={`${custody.pre_trial} pre-trial · ${custody.sentenced} sentenced`} />
+            <StatCard label="Total Records" value={custody.total} icon={Users}
+              sub={`${custody.released} released · ${custody.transferred} transferred`} />
+            <StatCard label={`Reviews Due (${custody.review_window_days}d)`} value={custody.reviews_due} icon={Calendar}
+              variant={custody.reviews_overdue > 0 ? 'danger' : custody.reviews_due > 0 ? 'warn' : 'ok'}
+              sub={custody.reviews_overdue > 0 ? `${custody.reviews_overdue} overdue` : 'None overdue'} />
+            <StatCard label="High Threat (≥4)" value={custody.high_threat} icon={AlertTriangle}
+              variant={custody.high_threat > 0 ? 'danger' : 'ok'}
+              sub={`${custody.escaped} escaped · ${custody.deceased} deceased`} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label={`Admissions (${custody.recent_window_days}d)`} value={custody.admissions_recent} icon={DoorOpen} />
+            <StatCard label={`Releases (${custody.recent_window_days}d)`} value={custody.releases_recent} icon={DoorOpen} />
+            <StatCard label="Transfers" value={custody.transferred} icon={ArrowRightLeft} />
+            <StatCard label="Alerts Today" value={stats?.alerts_today ?? 0} icon={AlertTriangle}
+              variant={(stats?.critical_alerts ?? 0) > 0 ? 'danger' : 'ok'}
+              sub={stats ? `${stats.critical_alerts} unread critical` : 'Alert feed unavailable'} />
+          </div>
+        </>
       ) : (
-        <p className="text-sm text-slate-500 py-4">Could not load statistics.</p>
+        <p className="text-sm text-slate-500 py-4">Could not load custody statistics.</p>
       )}
 
       {/* Inmates + Alerts */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 rounded-xl border border-rcs/20 bg-slate-900 p-5">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-slate-200 shrink-0">Suspects in Custody</h2>
+            <h2 className="text-sm font-semibold text-slate-200 shrink-0">Inmates in Custody</h2>
             <div className="relative flex-1 min-w-[160px]">
               <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-500" />
               <input
                 value={inmateSearch}
                 onChange={e => setInmateSearch(e.target.value)}
                 placeholder="Search by name or IMS ref…"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-rcs/50"
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-8 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-rcs/50"
               />
+              {searching && <Loader2 className="absolute right-2.5 top-2 h-3.5 w-3.5 text-slate-500 animate-spin" />}
             </div>
-            <span className="text-xs text-slate-500 shrink-0">{filteredCorrections.length}/{corrections.length}</span>
+            <span className="text-xs text-slate-500 shrink-0">
+              {roster.length} of {rosterTotal}
+            </span>
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-14 rounded-lg bg-slate-800 animate-pulse" />
             ))}</div>
-          ) : corrections.length === 0 ? (
+          ) : roster.length === 0 ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-slate-500 mb-3">No inmates in custody</p>
-              {canWrite && (
+              <p className="text-sm text-slate-500 mb-3">
+                {appliedSearch ? `No inmates match "${appliedSearch}"` : 'No inmates in custody'}
+              </p>
+              {canWrite && !appliedSearch && (
                 <button onClick={() => setShowAddInmate(true)}
                   className="flex items-center gap-1.5 mx-auto rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:border-slate-500 transition">
                   <Plus className="h-3.5 w-3.5" /> Record Intake
@@ -230,10 +290,7 @@ export default function RCSCustody() {
             </div>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
-              {filteredCorrections.length === 0 && (
-                <p className="text-xs text-slate-500 py-4 text-center">No inmates match &quot;{inmateSearch}&quot;</p>
-              )}
-              {filteredCorrections.map(c => {
+              {roster.map(c => {
                 const threatLevel = c.threat_level ?? 1
                 const custodyStatus = c.status ?? c.custody_status ?? '—'
                 const facilityName = c.facility ?? c.facility_name ?? '—'
@@ -278,7 +335,7 @@ export default function RCSCustody() {
                     <div className="text-right shrink-0 space-y-1 hidden sm:block">
                       <span className={clsx(
                         'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded block text-center',
-                        custodyStatus === 'PRE_TRIAL' ? 'text-blue-400 bg-blue-950' : 'text-purple-400 bg-purple-950'
+                        STATUS_COLOR[String(custodyStatus)] ?? 'text-slate-400 bg-slate-800'
                       )}>
                         {String(custodyStatus).replace('_', ' ')}
                       </span>
@@ -292,6 +349,11 @@ export default function RCSCustody() {
                   </div>
                 )
               })}
+              {rosterTotal > roster.length && (
+                <p className="text-[10px] text-slate-500 text-center pt-1">
+                  Showing the {roster.length} most recent intakes — see Inmates for the full roster.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -305,12 +367,12 @@ export default function RCSCustody() {
       {/* Intake chart + upcoming reviews */}
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-rcs/20 bg-slate-900 p-5">
-          <h2 className="mb-4 text-sm font-semibold text-slate-200">Monthly Intake (last 6 months)</h2>
-          {corrections.length === 0 ? (
+          <h2 className="mb-4 text-sm font-semibold text-slate-200">Intake vs Releases (last 6 months)</h2>
+          {!custody || custody.total === 0 ? (
             <p className="text-sm text-slate-500 py-16 text-center">No custody records</p>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={intakeData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <BarChart data={custody.monthly} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                 <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} allowDecimals={false} />
@@ -318,6 +380,7 @@ export default function RCSCustody() {
                   labelStyle={{ color: '#e2e8f0' }} />
                 <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
                 <Bar dataKey="intake" fill="#B45309" radius={[3, 3, 0, 0]} name="Intake" />
+                <Bar dataKey="releases" fill="#0891b2" radius={[3, 3, 0, 0]} name="Releases" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -327,52 +390,90 @@ export default function RCSCustody() {
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Calendar className="h-4 w-4 text-rcs" />
-            <h2 className="text-sm font-semibold text-slate-200">Upcoming Case Reviews</h2>
+            <h2 className="text-sm font-semibold text-slate-200">
+              Upcoming Case Reviews (next {reviewWindow} days)
+            </h2>
           </div>
-          {corrections.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4 text-center">No upcoming reviews</p>
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-12 rounded-lg bg-slate-800 animate-pulse" />
+            ))}</div>
+          ) : upcomingReviews.length === 0 ? (
+            <p className="text-sm text-slate-500 py-4 text-center">
+              No reviews scheduled in the next {reviewWindow} days
+              {custody && custody.reviews_overdue > 0 && ` · ${custody.reviews_overdue} overdue`}
+            </p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {corrections
-                .filter(c => c.next_review ?? c.next_review_date)
-                .sort((a, b) => {
-                  const da = new Date(a.next_review ?? a.next_review_date ?? '').getTime()
-                  const db = new Date(b.next_review ?? b.next_review_date ?? '').getTime()
-                  return da - db
-                })
-                .map(c => {
-                  const reviewDate = new Date(c.next_review ?? c.next_review_date ?? '')
-                  if (isNaN(reviewDate.getTime())) return null
-                  const diffDays = Math.ceil((reviewDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-                  const custodyStatus = c.status ?? c.custody_status ?? '—'
-                  const facilityName = c.facility ?? c.facility_name ?? '—'
-                  return (
-                    <div key={c.id}
-                      className={clsx(
-                        'flex items-center gap-3 rounded-lg border px-3 py-2.5 text-xs',
-                        diffDays <= 7
-                          ? 'border-amber-900/40 bg-amber-950/10'
-                          : 'border-slate-800 bg-slate-800/40'
-                      )}>
-                      <Clock className={clsx('h-3.5 w-3.5 shrink-0',
-                        diffDays <= 7 ? 'text-amber-400' : 'text-slate-500')} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-slate-200 font-medium truncate">{c.full_name ?? 'Unknown'}</p>
-                        <p className="text-slate-500 text-[10px]">{String(custodyStatus).replace('_', ' ')} · {facilityName}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className={clsx('font-bold',
-                          diffDays <= 7 ? 'text-amber-400' : 'text-slate-400')}>
-                          {diffDays}d
-                        </p>
-                        <p className="text-[10px] text-slate-500">{format(reviewDate, 'MMM d')}</p>
-                      </div>
-                    </div>
-                  )
-                })}
+              {upcomingReviews.map(({ record: c, date, days }) => (
+                <button key={c.id}
+                  onClick={() => setSelectedId(c.id)}
+                  className={clsx(
+                    'w-full text-left flex items-center gap-3 rounded-lg border px-3 py-2.5 text-xs transition',
+                    days <= 7
+                      ? 'border-amber-900/40 bg-amber-950/10 hover:bg-amber-950/20'
+                      : 'border-slate-800 bg-slate-800/40 hover:bg-slate-800/70'
+                  )}>
+                  <Clock className={clsx('h-3.5 w-3.5 shrink-0', days <= 7 ? 'text-amber-400' : 'text-slate-500')} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-200 font-medium truncate">{c.full_name ?? 'Unknown'}</p>
+                    <p className="text-slate-500 text-[10px]">
+                      {String(c.status ?? c.custody_status ?? '—').replace('_', ' ')} · {c.facility ?? c.facility_name ?? '—'}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={clsx('font-bold', days <= 7 ? 'text-amber-400' : 'text-slate-400')}>{days}d</p>
+                    <p className="text-[10px] text-slate-500">{format(date, 'MMM d')}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
+      </div>
+
+      {/* Facility statistics */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Building2 className="h-4 w-4 text-rcs" />
+          <h2 className="text-sm font-semibold text-slate-200">Facility Statistics</h2>
+        </div>
+        {loading ? (
+          <div className="h-24 rounded-lg bg-slate-800 animate-pulse" />
+        ) : !custody || custody.by_facility.length === 0 ? (
+          <p className="text-sm text-slate-500 py-4 text-center">No facility data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[420px]">
+                <thead>
+                  <tr className="text-[10px] uppercase text-slate-500 border-b border-slate-800">
+                    <th className="pb-2 pr-4 font-semibold">Facility</th>
+                    <th className="pb-2 pr-4 font-semibold text-right">In Custody</th>
+                    <th className="pb-2 pr-4 font-semibold text-right">Pre-Trial</th>
+                    <th className="pb-2 pr-4 font-semibold text-right">Sentenced</th>
+                    <th className="pb-2 font-semibold text-right">All Records</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {custody.by_facility.map(f => (
+                    <tr key={f.facility_name} className="border-b border-slate-800/50 text-xs">
+                      <td className="py-2 pr-4 text-slate-200">{f.facility_name}</td>
+                      <td className="py-2 pr-4 text-right text-white font-medium">{f.in_custody}</td>
+                      <td className="py-2 pr-4 text-right text-blue-400">{f.pre_trial}</td>
+                      <td className="py-2 pr-4 text-right text-purple-400">{f.sentenced}</td>
+                      <td className="py-2 text-right text-slate-400">{f.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-3">
+              Population is counted from custody records. Facility capacity and occupancy rate are
+              not shown because the database holds no facility capacity table to compute them from.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Escape protocol */}
@@ -382,21 +483,14 @@ export default function RCSCustody() {
           <div>
             <p className="text-sm font-bold text-amber-300">Escape Reporting Protocol</p>
             <p className="text-xs text-amber-400/80 mt-1">
-              Any escape must be immediately reported via the mobile app or backend API.
-              An escape event auto-generates CRITICAL alerts to RNP, NISS, and RDF and triggers
-              a cross-institutional location intelligence request. RFID wristband absence at evening
-              count gate automatically triggers the escape protocol.
+              Setting an inmate&apos;s custody status to ESCAPED records the escape and immediately
+              raises a CRITICAL alert to RCS, RNP, NISS and RDF. Change the status from the custody
+              record (Inmates → View → Custody &amp; Facility), or report it from the mobile app.
             </p>
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex items-center gap-2 text-xs text-amber-400/60">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                Auto-escape detection: ACTIVE
-              </div>
-              <div className="flex items-center gap-2 text-xs text-amber-400/60">
-                <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                RFID monitoring: ACTIVE
-              </div>
-            </div>
+            <p className="text-xs text-amber-400/60 mt-2">
+              RFID wristband gate detection is not yet connected — escapes are reported by an officer
+              until facility readers are integrated.
+            </p>
           </div>
         </div>
       </div>
