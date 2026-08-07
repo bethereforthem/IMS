@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit, extractAuditContext } from '@/lib/audit'
+import { invalidateSessionCache } from '@/lib/access-enforcement'
 import type { AuthPayload } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
@@ -30,7 +31,14 @@ export const POST = withAuth(
 
     if (error) return apiError('Reset failed', 500)
 
-    await db.from('user_sessions').update({ revoked: true }).eq('user_id', id)
+    const { data: revokedSessions } = await db
+      .from('user_sessions')
+      .update({ revoked: true, revoked_at: new Date().toISOString() })
+      .eq('user_id', id)
+      .eq('revoked', false)
+      .select('id')
+
+    for (const s of revokedSessions ?? []) invalidateSessionCache(s.id)
 
     await logAudit({
       event_type: 'ADMIN_ACTION',
