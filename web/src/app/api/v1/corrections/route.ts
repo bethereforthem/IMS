@@ -2,6 +2,15 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError, getPagination } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
+import { assertRwLocations } from '@/lib/rw-locations-server'
+import { splitByAvailableColumns, MIGRATION_HINT } from '@/lib/corrections-schema'
+
+// Columns a caller may sort by. Anything else is ignored rather than passed
+// through, so a query string can never reach PostgREST as an ORDER BY clause.
+const SORTABLE = new Set([
+  'created_at', 'intake_date', 'next_review', 'threat_level',
+  'facility_name', 'custody_status', 'sentence_years', 'release_date',
+])
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/corrections
@@ -12,19 +21,48 @@ export const GET = withAuth(async (req: NextRequest, { user }) => {
     const custody_status = url.searchParams.get('custody_status')
     const facility_name = url.searchParams.get('facility_name')
     const threat_level = url.searchParams.get('threat_level')
+    const search = (url.searchParams.get('q') ?? '').trim()
+    const sortParam = url.searchParams.get('sort') ?? 'created_at'
+    const sort = SORTABLE.has(sortParam) ? sortParam : 'created_at'
+    const ascending = url.searchParams.get('order') === 'asc'
     const { page, pageSize, offset } = getPagination(req)
 
     const supabase = createServerSupabaseClient()
 
+    // A name/IMS-reference search has to reach the joined suspect row, and an
+    // embedded filter only narrows the parent when the join is `!inner`.
+    const suspectJoin = search
+      ? 'suspects!inner(full_name, ims_reference, status)'
+      : 'suspects(full_name, ims_reference, status)'
+
     let query = supabase
       .from('corrections_records')
-      .select('*, suspects(full_name, ims_reference, status)', { count: 'exact' })
+      .select(`*, ${suspectJoin}`, { count: 'exact' })
       .range(offset, offset + pageSize - 1)
-      .order('created_at', { ascending: false })
+      .order(sort, { ascending, nullsFirst: false })
 
-    if (custody_status) query = query.eq('custody_status', custody_status)
+    // Accepts a single status or a comma-separated set, so "everyone actually
+    // inside" (PRE_TRIAL,SENTENCED) is one request rather than one per status
+    // or a whole-table fetch narrowed in the browser.
+    if (custody_status) {
+      const statuses = custody_status.split(',').map(s => s.trim()).filter(Boolean)
+      query = statuses.length > 1
+        ? query.in('custody_status', statuses)
+        : query.eq('custody_status', statuses[0])
+    }
     if (facility_name) query = query.ilike('facility_name', `%${facility_name}%`)
     if (threat_level) query = query.eq('threat_level', threat_level)
+    if (search) {
+      // Commas and parentheses would otherwise terminate the PostgREST filter
+      // list and let a search box smuggle extra predicates into the query.
+      const safe = search.replace(/[,()*]/g, ' ').trim()
+      if (safe) {
+        query = query.or(
+          `full_name.ilike.%${safe}%,ims_reference.ilike.%${safe}%`,
+          { referencedTable: 'suspects' }
+        )
+      }
+    }
 
     const { data: records, count, error } = await query
 
@@ -86,6 +124,17 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       return apiError('suspect_id and facility_name are required', 400)
     }
 
+    // Re-validate the administrative chains behind the flattened address
+    // strings. Village and cell names repeat across the country, so a chain is
+    // only trustworthy once each level has been checked against its parent.
+    const locationCheck = assertRwLocations([
+      { label: 'Residential address', value: body.residence },
+      { label: 'Domicile address', value: body.domicile },
+    ])
+    if (!locationCheck.ok) {
+      return apiError(locationCheck.errors.join('; '), 400)
+    }
+
     const supabase = createServerSupabaseClient()
 
     // Verify suspect exists
@@ -113,7 +162,9 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       facility_name,
       cell_block: cell_block ?? null,
       custody_status: custody_status ?? 'PRE_TRIAL',
-      intake_date: intake_date ?? null,
+      // `intake_date` is NOT NULL on the table, so an intake recorded without
+      // one used to fail with a bare 500 instead of defaulting to now.
+      intake_date: intake_date ?? new Date().toISOString(),
       sentence_start: intake_date ?? null,
       sentence_years: sentence_years ?? null,
       sentence_end,
@@ -121,6 +172,7 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       offense_description: offense_description ?? null,
       next_review: next_review ?? null,
       threat_level: threat_level ?? null,
+      intake_verified_by: user.user_id,
     }
 
     // Extended columns added by the corrections personal-info migration
@@ -151,23 +203,24 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       visitor_log: [],
     }
 
-    let { data: record, error } = await supabase
+    // Ask the database which of the extended columns it actually has rather
+    // than inserting everything and retrying on failure. The retry landed on
+    // the core record and reported success, so an operator who filled in the
+    // whole personal-info form was told the intake saved with no indication
+    // that two thirds of what they typed had been dropped.
+    const { supported, unsupported } = await splitByAvailableColumns(extendedRecord)
+    if (unsupported.length > 0) {
+      console.warn(
+        `[POST /api/v1/corrections] dropping ${unsupported.length} field(s) — ${MIGRATION_HINT}`,
+        unsupported
+      )
+    }
+
+    const { data: record, error } = await supabase
       .from('corrections_records')
-      .insert(extendedRecord)
+      .insert(supported)
       .select()
       .single()
-
-    // PGRST204 / 42703 = unknown column: personal-info migration not yet
-    // applied to this database — retry with the core schema so intake
-    // still succeeds (extended fields are dropped until migration runs).
-    if (error && (error.code === 'PGRST204' || error.code === '42703')) {
-      console.warn('[POST /api/v1/corrections] extended columns missing — run the corrections personal-info migration. Falling back to core fields.')
-      ;({ data: record, error } = await supabase
-        .from('corrections_records')
-        .insert(coreRecord)
-        .select()
-        .single())
-    }
 
     if (error) {
       console.error('[POST /api/v1/corrections]', error)
@@ -183,7 +236,12 @@ export const POST = withAuth(async (req: NextRequest, { user }) => {
       after_state: record,
     })
 
-    return apiSuccess(record, 201)
+    return apiSuccess(
+      unsupported.length > 0
+        ? { ...record, unsupported_fields: unsupported, warning: MIGRATION_HINT }
+        : record,
+      201
+    )
   } catch (err) {
     console.error('[POST /api/v1/corrections]', err)
     return apiError('Internal server error', 500)
