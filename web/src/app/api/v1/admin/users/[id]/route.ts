@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit, extractAuditContext } from '@/lib/audit'
+import { invalidateSessionCache } from '@/lib/access-enforcement'
 import type { AuthPayload } from '@/lib/rbac'
 
 export const runtime = 'nodejs'
@@ -62,7 +63,32 @@ export const PATCH = withAuth(
     if (Object.keys(allowed).length === 0) return apiError('No valid fields to update', 400)
 
     const { error } = await db.from('users').update(allowed).eq('id', id)
-    if (error) return apiError('Update failed', 500)
+    if (error) {
+      console.error('[admin/users PATCH] update failed', error)
+      return apiError('Update failed', 500)
+    }
+
+    // Disabling or locking an account only changed a flag that is checked at
+    // login. An already-signed-in user kept a valid access token — and so full
+    // access — until it expired, up to 8 hours later. Cut the sessions too.
+    const shouldRevoke = allowed.active === false || allowed.locked === true
+    let sessionsRevoked = 0
+
+    if (shouldRevoke) {
+      const { data: revoked, error: revokeError } = await db
+        .from('user_sessions')
+        .update({ revoked: true, revoked_at: new Date().toISOString() })
+        .eq('user_id', id)
+        .eq('revoked', false)
+        .select('id')
+
+      if (revokeError) {
+        console.error('[admin/users PATCH] session revoke failed', revokeError)
+      } else {
+        sessionsRevoked = revoked?.length ?? 0
+        for (const s of revoked ?? []) invalidateSessionCache(s.id)
+      }
+    }
 
     const action = body.active === false ? 'admin_disable_user'
       : body.active === true ? 'admin_enable_user'
@@ -76,10 +102,10 @@ export const PATCH = withAuth(
       target_type: 'user',
       target_id: id,
       context: ctx,
-      after_state: allowed,
+      after_state: { ...allowed, sessions_revoked: sessionsRevoked },
     }).catch(() => {})
 
-    return apiSuccess({ updated: true })
+    return apiSuccess({ updated: true, sessions_revoked: sessionsRevoked })
   },
   'admin:users'
 )
