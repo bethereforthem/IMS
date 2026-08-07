@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { StatCard } from '@/components/shared/StatCard'
 import { SourceTagBadge } from '@/components/shared/SourceTagBadge'
-import { alertsApi } from '@/lib/api'
+import { alertsApi, apiErrorMessage } from '@/lib/api'
 import { formatDistanceToNow, format } from 'date-fns'
 import { Bell, AlertTriangle, XCircle, Info, CheckCheck, Zap, X } from 'lucide-react'
 import clsx from 'clsx'
@@ -38,14 +38,42 @@ export default function AlertsPage() {
   const [allAlerts,     setAllAlerts]      = useState<Alert[]>([])
   const [readState,     setReadState]      = useState<Record<string, boolean>>({})
   const [newBanner,     setNewBanner]      = useState(0)
+  const [loading,       setLoading]        = useState(true)
+  const [error,         setError]          = useState('')
+  const [markingId,     setMarkingId]      = useState<string | null>(null)
 
   const seenIdsRef     = useRef<Set<string>>(new Set())
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  /**
+   * Mark an alert read on the server.
+   *
+   * This used to only flip a value in local component state — the PATCH
+   * endpoint and its `alertsApi.markRead` client both already existed but were
+   * never called, so `is_read`, `read_by` and `read_at` were never written and
+   * every alert reverted to unread on the next page load.
+   */
+  const markRead = useCallback(async (alertId: string) => {
+    setMarkingId(alertId)
+    // Optimistic, so the row responds immediately on a slow connection.
+    setReadState(s => ({ ...s, [alertId]: true }))
+    try {
+      await alertsApi.markRead(alertId)
+      setAllAlerts(prev => prev.map(a => (a.id === alertId ? { ...a, is_read: true } : a)))
+    } catch (e: unknown) {
+      setReadState(s => ({ ...s, [alertId]: false }))   // roll back
+      setError(apiErrorMessage(e, 'Could not mark that alert as read.'))
+    } finally {
+      setMarkingId(null)
+    }
+  }, [])
+
   const fetchAlerts = useCallback(() => {
     alertsApi.list({ limit: 200 }).then(r => {
-      if (!r.data?.alerts?.length) return
-      const fetched: Alert[] = r.data.alerts
+      // Assigning only on a non-empty result meant the list could never shrink
+      // back to empty, and the poll below would keep showing a stale page.
+      const fetched: Alert[] = r.data?.alerts ?? []
+      setError('')
       const newIds = fetched.filter(a => !seenIdsRef.current.has(a.id))
       if (newIds.length > 0 && seenIdsRef.current.size > 0) {
         setNewBanner(newIds.length)
@@ -59,7 +87,10 @@ export default function AlertsPage() {
         fetched.forEach((a: Alert) => { if (!(a.id in next)) next[a.id] = a.is_read })
         return next
       })
-    }).catch(() => {})
+    }).catch((e: unknown) => {
+      // A poll that fails every 30s used to do so completely silently.
+      setError(apiErrorMessage(e, 'Could not refresh alerts.'))
+    }).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -169,11 +200,24 @@ export default function AlertsPage() {
 
       <p className="text-xs text-slate-500">Showing {alerts.length} of {totalCount} alerts</p>
 
+      {error && (
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
       {/* Alert cards */}
       <div className="space-y-3">
-        {alerts.length === 0 && (
+        {loading && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-sm text-slate-500" aria-busy="true">
+            Loading alerts…
+          </div>
+        )}
+        {!loading && alerts.length === 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-8 text-center text-sm text-slate-500">
-            No alerts match the current filters.
+            {allAlerts.length === 0
+              ? 'No alerts have been raised for your institution.'
+              : 'No alerts match the current filters.'}
           </div>
         )}
         {alerts.map(alert => {
@@ -226,10 +270,11 @@ export default function AlertsPage() {
                     </div>
                     {!isRead && (
                       <button
-                        onClick={() => setReadState(s => ({ ...s, [alert.id]: true }))}
-                        className="text-[10px] text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-md transition-colors shrink-0"
+                        onClick={() => markRead(alert.id)}
+                        disabled={markingId === alert.id}
+                        className="text-[10px] text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-md transition-colors shrink-0 disabled:opacity-50"
                       >
-                        Mark Read
+                        {markingId === alert.id ? 'Marking…' : 'Mark Read'}
                       </button>
                     )}
                   </div>
