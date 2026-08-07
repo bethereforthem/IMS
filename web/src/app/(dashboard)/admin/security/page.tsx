@@ -32,16 +32,27 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function AdminSecurityPage() {
   const [incidents,   setIncidents]   = useState<SecurityIncident[]>([])
+  // Real total for the selected state; the list itself is capped at 100.
+  const [incidentTotal, setIncidentTotal] = useState(0)
   const [showResolved, setShowResolved] = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [notes,       setNotes]       = useState<Record<string, string>>({})
+  const [error,       setError]       = useState<string | null>(null)
 
   const load = useCallback((resolved: boolean) => {
     setLoading(true)
     adminPortalApi.getIncidents(resolved, 100)
-      .then(r => setIncidents(r.data?.incidents ?? []))
-      .catch(console.error)
+      .then(r => {
+        setIncidents(r.data?.incidents ?? [])
+        setIncidentTotal(r.data?.count ?? r.data?.incidents?.length ?? 0)
+        setError(null)
+      })
+      .catch((e: unknown) => {
+        console.error(e)
+        const detail = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+        setError(detail ?? 'Could not load security incidents.')
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -49,11 +60,16 @@ export default function AdminSecurityPage() {
 
   const handleResolve = async (id: string) => {
     setResolvingId(id)
+    setError(null)
     try {
       await adminPortalApi.resolveIncident(id, notes[id] ?? 'Resolved by admin')
       load(showResolved)
-    } catch (e) {
+    } catch (e: unknown) {
+      // This used to fail silently: the incident simply stayed in the list with
+      // no indication the resolve had been rejected.
       console.error(e)
+      const detail = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setError(detail ?? 'Failed to resolve incident. It remains open.')
     } finally {
       setResolvingId(null)
     }
@@ -66,7 +82,10 @@ export default function AdminSecurityPage() {
         <ShieldAlert style={{ width: 22, height: 22, color: '#ef4444' }} />
         <div style={{ flex: 1 }}>
           <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#f1f5f9', margin: 0 }}>Security / IDS</h1>
-          <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>Intrusion Detection System — {incidents.length} {showResolved ? 'resolved' : 'open'} incidents</p>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+            Intrusion Detection System — {incidentTotal} {showResolved ? 'resolved' : 'open'} incident{incidentTotal === 1 ? '' : 's'}
+            {incidentTotal > incidents.length && ` · showing latest ${incidents.length}`}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
@@ -93,6 +112,16 @@ export default function AdminSecurityPage() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div role="alert" style={{
+          background: '#450a0a', border: '1px solid #ef4444', borderRadius: '8px',
+          padding: '10px 14px', marginBottom: '14px',
+          color: '#fca5a5', fontSize: '12px', fontWeight: 600,
+        }}>
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ padding: '60px', textAlign: 'center', color: '#64748b' }}>Loading incidents…</div>
