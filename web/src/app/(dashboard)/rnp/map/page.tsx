@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { cameraApi, locationApi, intelligenceApi } from '@/lib/api'
+import { cameraApi, locationApi, intelligenceApi, apiErrorMessage } from '@/lib/api'
 import { formatDistanceToNow } from 'date-fns'
 import { Map, Video, Radio, Users, Bell } from 'lucide-react'
 import clsx from 'clsx'
@@ -21,19 +21,18 @@ export default function MapPage() {
   const [villageEvents, setVillageEvents] = useState<IntelligenceEvent[]>([])
   const [alertEvents,    setAlertEvents]   = useState<IntelligenceEvent[]>([])
   const [alertSyncedAt,  setAlertSyncedAt] = useState<Date | null>(null)
+  const [layerError,     setLayerError]   = useState('')
 
   useEffect(() => {
     cameraApi.list().then(r => {
-      if (r.data?.length) {
-        setCameraNodes((r.data as CameraNode[]).filter(c => c.latitude != null && c.longitude != null))
-      }
-    }).catch(() => {})
+      setCameraNodes((r.data ?? []).filter(c => c.latitude != null && c.longitude != null))
+    }).catch((e: unknown) => setLayerError(apiErrorMessage(e, 'Could not load camera nodes.')))
   }, [])
 
   useEffect(() => {
     locationApi.getRecentLocations().then(r => {
-      if (r.data?.length) {
-        const mapped: IntelligenceEvent[] = (r.data as LocationRecord[])
+      {
+        const mapped: IntelligenceEvent[] = ((r.data ?? []) as LocationRecord[])
           .filter(loc => loc.latitude != null && loc.longitude != null)
           .map(loc => ({
             id: loc.id,
@@ -50,7 +49,12 @@ export default function MapPage() {
           }))
         setIntelEvents(mapped)
       }
-    }).catch(() => {})
+    }).catch((e: unknown) => {
+      // This endpoint was returning 500 for every limited-clearance role, and
+      // discarding the rejection left the officer-location layer silently
+      // absent with the map still looking perfectly healthy.
+      setLayerError(apiErrorMessage(e, 'Could not load recent officer locations.'))
+    })
   }, [])
 
   useEffect(() => {
@@ -62,7 +66,7 @@ export default function MapPage() {
           )
         )
       }
-    }).catch(() => {})
+    }).catch((e: unknown) => setLayerError(apiErrorMessage(e, 'Could not load village intelligence.')))
   }, [])
 
   useEffect(() => {
@@ -72,7 +76,7 @@ export default function MapPage() {
           setAlertEvents(r.data as IntelligenceEvent[])
           setAlertSyncedAt(new Date())
         }
-      }).catch(() => {})
+      }).catch((e: unknown) => setLayerError(apiErrorMessage(e, 'Could not refresh live alert events.')))
     }
     fetchAlerts()
     const id = setInterval(fetchAlerts, 15_000)
@@ -92,6 +96,14 @@ export default function MapPage() {
           RNP Operations
         </div>
       </div>
+
+      {/* A map layer that fails to load leaves the map itself looking fine, so
+          say which one is missing rather than showing a quietly incomplete view. */}
+      {layerError && (
+        <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
+          {layerError} Some map layers may be incomplete.
+        </div>
+      )}
 
       {/* Live alert feed status bar */}
       <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-4 py-2">
