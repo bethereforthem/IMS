@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { logAudit, extractAuditContext } from '@/lib/audit'
 import type { AuthPayload } from '@/lib/rbac'
 
 // Which institutions can share alerts to which targets
@@ -69,6 +70,24 @@ export const POST = withAuth(
         console.error('[alerts/share]', createErr)
         return apiError('Failed to create shared alert', 500)
       }
+
+      // Forwarding an alert moves intelligence across an institutional boundary.
+      // That had no audit record, so there was no way to establish afterwards
+      // who released what to whom.
+      await logAudit({
+        event_type:  'ALERT_SHARED',
+        action:      'CREATE',
+        actor:       user,
+        target_type: 'alert',
+        target_id:   alertId,
+        after_state: {
+          shared_alert_id: created.id,
+          target_institution,
+          instructions: instructions.trim(),
+        },
+        justification: instructions.trim(),
+        context:       extractAuditContext(req),
+      })
 
       return apiSuccess({ shared_alert_id: created.id, target: target_institution })
     } catch (err) {
