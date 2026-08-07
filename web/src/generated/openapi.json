@@ -1,0 +1,7043 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "IMS — Rwanda Intelligence Management System API",
+    "version": "3.0.0",
+    "description": "**Classification: RESTRICTED — Authorized Personnel Only.**\n\nGenerated directly from the route handlers in `src/app/api/v1/` by\n`scripts/generate-openapi.js`. Do not edit by hand — re-run the script instead.\n\n## Auth flow\n1. `POST /auth/login` — badge number + password → `access_token` + `refresh_token`\n2. Send `Authorization: Bearer <access_token>` on every other request\n3. `POST /auth/refresh` rotates the pair before expiry\n\nEach operation lists the permission it requires. Permissions are granted per role\nin `src/lib/rbac.ts`; clearance level is checked separately on classified records."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "This host"
+    },
+    {
+      "url": "http://localhost:3000/api/v1",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "admin"
+    },
+    {
+      "name": "agent-tracking"
+    },
+    {
+      "name": "ai-intelligence"
+    },
+    {
+      "name": "alerts"
+    },
+    {
+      "name": "audit"
+    },
+    {
+      "name": "auth"
+    },
+    {
+      "name": "border"
+    },
+    {
+      "name": "cases"
+    },
+    {
+      "name": "commander-rescue"
+    },
+    {
+      "name": "corrections"
+    },
+    {
+      "name": "dashboard"
+    },
+    {
+      "name": "field-reports"
+    },
+    {
+      "name": "geo"
+    },
+    {
+      "name": "infrastructure"
+    },
+    {
+      "name": "intelligence"
+    },
+    {
+      "name": "location"
+    },
+    {
+      "name": "openapi"
+    },
+    {
+      "name": "partners"
+    },
+    {
+      "name": "patrol"
+    },
+    {
+      "name": "policies"
+    },
+    {
+      "name": "search"
+    },
+    {
+      "name": "siem"
+    },
+    {
+      "name": "suspects"
+    },
+    {
+      "name": "team"
+    },
+    {
+      "name": "warrants"
+    }
+  ],
+  "paths": {
+    "/admin/analytics": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/analytics",
+        "description": "**Required permission:** `admin:analytics`",
+        "operationId": "get_admin_analytics",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:analytics"
+      }
+    },
+    "/admin/controls": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/controls",
+        "description": "**Required permission:** `admin:controls`",
+        "operationId": "get_admin_controls",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:controls"
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "POST /admin/controls",
+        "description": "**Required permission:** `admin:controls`",
+        "operationId": "post_admin_controls",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:controls",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/emergency-lockdown": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Directors eligible to co-sign a lockdown: active NISS_DIRECTORs other than",
+        "description": "**Required permission:** `emergency_lockdown`\n\nDirectors eligible to co-sign a lockdown: active NISS_DIRECTORs other than\n\nthe caller. Lets the console offer a picker instead of asking an operator to\n\npaste a raw UUID during an emergency.\n\nRequires emergency_lockdown permission (NISS_DIRECTOR only)",
+        "operationId": "get_admin_emergency_lockdown",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "emergency_lockdown"
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Requires emergency_lockdown permission (NISS_DIRECTOR only)",
+        "description": "**Required permission:** `emergency_lockdown`\n\nRequires emergency_lockdown permission (NISS_DIRECTOR only)",
+        "operationId": "post_admin_emergency_lockdown",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "emergency_lockdown",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "second_director_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/health": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/health",
+        "description": "**Required permission:** `admin:read`",
+        "operationId": "get_admin_health",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:read"
+      }
+    },
+    "/admin/page-visits": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "POST /admin/page-visits",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "post_admin_page_visits",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string"
+                  },
+                  "page_path": {
+                    "type": "string"
+                  },
+                  "page_title": {
+                    "type": "string"
+                  },
+                  "visit_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/policies": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List all policy documents with acceptance stats.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nList all policy documents with acceptance stats.",
+        "operationId": "get_admin_policies",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create a new version for a policy type (deactivates old active version).",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nCreate a new version for a policy type (deactivates old active version).",
+        "operationId": "post_admin_policies",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "policy_type": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "effective_date": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/policies/{id}": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update content or metadata of a policy document.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nUpdate content or metadata of a policy document.",
+        "operationId": "patch_admin_policies__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "effective_date": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Fetch single policy with acceptance history.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nFetch single policy with acceptance history.",
+        "operationId": "get_admin_policies__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/admin/revoke-access": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Requires revocation:any or revocation:own",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nRequires revocation:any or revocation:own",
+        "operationId": "post_admin_revoke_access",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target_user_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/security": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/security",
+        "description": "**Required permission:** `admin:security`",
+        "operationId": "get_admin_security",
+        "parameters": [
+          {
+            "name": "resolved",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:security"
+      }
+    },
+    "/admin/security/{id}/resolve": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "POST /admin/security/{id}/resolve",
+        "description": "**Required permission:** `admin:security`",
+        "operationId": "post_admin_security__id__resolve",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:security",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "resolution_notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/sessions",
+        "description": "**Required permission:** `admin:read`",
+        "operationId": "get_admin_sessions",
+        "parameters": [
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:read"
+      }
+    },
+    "/admin/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Terminates a single active session without locking the user account.",
+        "description": "**Required permission:** `admin:controls`\n\nTerminates a single active session without locking the user account.\n\nLighter than revoke-access (which locks the account entirely).",
+        "operationId": "delete_admin_sessions__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:controls"
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/users",
+        "description": "**Required permission:** `admin:users`",
+        "operationId": "get_admin_users",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:users"
+      }
+    },
+    "/admin/users/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "GET /admin/users/{id}",
+        "description": "**Required permission:** `admin:users`",
+        "operationId": "get_admin_users__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:users"
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "PATCH /admin/users/{id}",
+        "description": "**Required permission:** `admin:users`",
+        "operationId": "patch_admin_users__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:users",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "string"
+                  },
+                  "locked": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/permissions": {
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "PATCH /admin/users/{id}/permissions",
+        "description": "**Required permission:** `admin:users`",
+        "operationId": "patch_admin_users__id__permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:users",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/reset": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "POST /admin/users/{id}/reset",
+        "description": "**Required permission:** `admin:users`",
+        "operationId": "post_admin_users__id__reset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:users",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "new_password": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-tracking/agents": {
+      "get": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Returns agents with active tracking sessions + last position + availability.",
+        "description": "**Required permission:** `alerts:read`\n\nReturns agents with active tracking sessions + last position + availability.\n\nAlso performs lazy stale detection: agents whose heartbeat is overdue are\n\natomically flipped to OFFLINE and a CRITICAL alert is created once.",
+        "operationId": "get_agent_tracking_agents",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      }
+    },
+    "/agent-tracking/heartbeat": {
+      "post": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Every agent on the dashboard sends this every ~20s.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nEvery agent on the dashboard sends this every ~20s.\n\nBody: { location_lat?, location_lng?, accuracy_m? }",
+        "operationId": "post_agent_tracking_heartbeat",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "accuracy_m": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-tracking/offline": {
+      "post": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Agent proactively reports going offline (network loss, GPS off, beforeunload).",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nAgent proactively reports going offline (network loss, GPS off, beforeunload).\n\nBody: { reason, location_lat?, location_lng? }\n\nSupports keepalive fetches sent from beforeunload.",
+        "operationId": "post_agent_tracking_offline",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-tracking/ping": {
+      "post": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Field agent sends current GPS coordinates. Must have an active session.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nField agent sends current GPS coordinates. Must have an active session.\n\nBody: { session_id, lat, lng, accuracy_m?, heading?, speed_ms? }",
+        "operationId": "post_agent_tracking_ping",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "string"
+                  },
+                  "lng": {
+                    "type": "string"
+                  },
+                  "accuracy_m": {
+                    "type": "string"
+                  },
+                  "heading": {
+                    "type": "string"
+                  },
+                  "speed_ms": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-tracking/sessions/{id}": {
+      "patch": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Body: { action: 'pause' | 'resume' | 'close' }",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nBody: { action: 'pause' | 'resume' | 'close' }\n\nAn agent can only manage their own session; NISS can manage any.",
+        "operationId": "patch_agent_tracking_sessions__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "GET /agent-tracking/sessions/{id}",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "get_agent_tracking_sessions__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/agent-tracking/sessions/{id}/directive": {
+      "post": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "A commander transmits an order to the agent on a live tracking session —",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nA commander transmits an order to the agent on a live tracking session —\n\nthe \"DIRECT\" action on the NISS location-intelligence map.\n\nFollows the same delivery path as commander-rescue: an intelligence event\n\npins it to the location maps, and an alert targeted at the agent's\n\ninstitution is what actually reaches them.\n\nRequires permission: agent_tracking:manage",
+        "operationId": "post_agent_tracking_sessions__id__directive",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-tracking/sessions/my": {
+      "get": {
+        "tags": [
+          "agent-tracking"
+        ],
+        "summary": "Returns the authenticated agent's latest ACTIVE or PAUSED tracking session,",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nReturns the authenticated agent's latest ACTIVE or PAUSED tracking session,\n\nincluding the linked field report title. Used by the mobile app to recover\n\na session that was lost from local storage (e.g. app reinstall, cleared cache,\n\nor a commander-initiated reopen that created a new session).",
+        "operationId": "get_agent_tracking_sessions_my",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/ai-intelligence/analyze": {
+      "post": {
+        "tags": [
+          "ai-intelligence"
+        ],
+        "summary": "── POST /api/v1/ai-intelligence/analyze ─────────────────────────────────────",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\n── POST /api/v1/ai-intelligence/analyze ─────────────────────────────────────",
+        "operationId": "post_ai_intelligence_analyze",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force_refresh": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai-intelligence/feedback": {
+      "post": {
+        "tags": [
+          "ai-intelligence"
+        ],
+        "summary": "Commanders mark predictions accurate/inaccurate — feeds the accuracy metric.",
+        "description": "**Required permission:** `ai_intelligence:read`\n\nCommanders mark predictions accurate/inaccurate — feeds the accuracy metric.",
+        "operationId": "post_ai_intelligence_feedback",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "ai_intelligence:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prediction_id": {
+                    "type": "string"
+                  },
+                  "accurate": {
+                    "type": "string"
+                  },
+                  "accuracy_rating": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "actual_event_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai-intelligence/predictions": {
+      "get": {
+        "tags": [
+          "ai-intelligence"
+        ],
+        "summary": "Returns the most recent completed prediction run for the caller's institution.",
+        "description": "**Required permission:** `ai_intelligence:read`\n\nReturns the most recent completed prediction run for the caller's institution.",
+        "operationId": "get_ai_intelligence_predictions",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "ai_intelligence:read"
+      }
+    },
+    "/alerts": {
+      "get": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "GET /alerts",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_alerts",
+        "parameters": [
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "is_read",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requires_action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      }
+    },
+    "/alerts/{id}/read": {
+      "patch": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "PATCH /alerts/{id}/read",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "patch_alerts__id__read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      }
+    },
+    "/alerts/{id}/share": {
+      "post": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "POST /alerts/{id}/share",
+        "description": "**Required permission:** `alerts:acknowledge`",
+        "operationId": "post_alerts__id__share",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:acknowledge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target_institution": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/sos": {
+      "post": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "Emergency SOS from any authenticated user. Creates a CRITICAL alert visible",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nEmergency SOS from any authenticated user. Creates a CRITICAL alert visible\n\nto all institutions + a field_report + agent_tracking_session for live GPS\n\ntracking on commander maps. The tracking session is the canonical map marker\n\n(live, moves with the agent) — no static intelligence_event is created.\n\nNo special permission required beyond valid JWT auth.",
+        "operationId": "post_alerts_sos",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/sos/acknowledge": {
+      "post": {
+        "tags": [
+          "alerts"
+        ],
+        "summary": "Commander acknowledges an SOS alert — marks it read, logs the event.",
+        "description": "**Required permission:** `alerts:acknowledge`\n\nCommander acknowledges an SOS alert — marks it read, logs the event.\n\nRequires alerts:acknowledge permission.\n\nBody: { alert_id: string, notes?: string }",
+        "operationId": "post_alerts_sos_acknowledge",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:acknowledge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "alert_id": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Full-featured audit log search for admins and institution commanders.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nFull-featured audit log search for admins and institution commanders.",
+        "operationId": "get_audit",
+        "parameters": [
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor_badge",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "export",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "── Main handler ─────────────────────────────────────────────────────────────",
+        "description": "**Public endpoint** — no authentication required.\n\n── Main handler ─────────────────────────────────────────────────────────────",
+        "operationId": "post_auth_login",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "badge_number": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "POST /auth/logout",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "post_auth_logout",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "POST /auth/refresh",
+        "description": "**Public endpoint** — no authentication required.",
+        "operationId": "post_auth_refresh",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refresh_token": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-otp": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "POST /auth/verify-otp",
+        "description": "**Public endpoint** — no authentication required.",
+        "operationId": "post_auth_verify_otp",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_token": {
+                    "type": "string"
+                  },
+                  "otp": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/border/verifications": {
+      "get": {
+        "tags": [
+          "border"
+        ],
+        "summary": "Returns paginated verification logs for the officer's institution.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nReturns paginated verification logs for the officer's institution.",
+        "operationId": "get_border_verifications",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "doc_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/border/verify": {
+      "post": {
+        "tags": [
+          "border"
+        ],
+        "summary": "Border officer submits extracted document data; server checks IMS databases",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nBorder officer submits extracted document data; server checks IMS databases\n\nand returns a clean/flagged result with full audit trail.",
+        "operationId": "post_border_verify",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "doc_type": {
+                    "type": "string"
+                  },
+                  "doc_number": {
+                    "type": "string"
+                  },
+                  "full_name": {
+                    "type": "string"
+                  },
+                  "first_name": {
+                    "type": "string"
+                  },
+                  "last_name": {
+                    "type": "string"
+                  },
+                  "date_of_birth": {
+                    "type": "string"
+                  },
+                  "nationality": {
+                    "type": "string"
+                  },
+                  "gender": {
+                    "type": "string"
+                  },
+                  "expiry_date": {
+                    "type": "string"
+                  },
+                  "issuing_country": {
+                    "type": "string"
+                  },
+                  "issuing_authority": {
+                    "type": "string"
+                  },
+                  "mrz_line1": {
+                    "type": "string"
+                  },
+                  "mrz_line2": {
+                    "type": "string"
+                  },
+                  "raw_ocr_text": {
+                    "type": "string"
+                  },
+                  "scan_method": {
+                    "type": "string"
+                  },
+                  "ocr_confidence": {
+                    "type": "string"
+                  },
+                  "scan_failed": {
+                    "type": "string"
+                  },
+                  "scan_failure_reason": {
+                    "type": "string"
+                  },
+                  "border_post": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "device_type": {
+                    "type": "string"
+                  },
+                  "device_info": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "GET /cases",
+        "description": "**Required permission:** `cases:read`",
+        "operationId": "get_cases",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clearance_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:read"
+      },
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "POST /cases",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "post_cases",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "clearance_level": {
+                    "type": "string"
+                  },
+                  "lead_institution": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "incident_date": {
+                    "type": "string"
+                  },
+                  "location_name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{id}": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "GET /cases/{id}",
+        "description": "**Required permission:** `cases:read`",
+        "operationId": "get_cases__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:read"
+      },
+      "patch": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "PATCH /cases/{id}",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "patch_cases__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "DELETE /cases/{id}",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "delete_cases__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write"
+      }
+    },
+    "/cases/{id}/report": {
+      "get": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "GET /cases/{id}/report",
+        "description": "**Required permission:** `cases:read`",
+        "operationId": "get_cases__id__report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:read"
+      },
+      "put": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "PUT /cases/{id}/report",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "put_cases__id__report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "report_data": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{id}/suspects": {
+      "post": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "POST /cases/{id}/suspects",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "post_cases__id__suspects",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "suspect_id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "cases"
+        ],
+        "summary": "DELETE /cases/{id}/suspects",
+        "description": "**Required permission:** `cases:write`",
+        "operationId": "delete_cases__id__suspects",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "suspect_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commander-rescue": {
+      "post": {
+        "tags": [
+          "commander-rescue"
+        ],
+        "summary": "Authorized commander triggers an emergency rescue alert.",
+        "description": "**Required permission:** `commander_rescue:trigger`\n\nAuthorized commander triggers an emergency rescue alert.\n\nCreates CRITICAL alert → intelligence event → field_report → tracking session.\n\nRequires permission: commander_rescue:trigger",
+        "operationId": "post_commander_rescue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "commander_rescue:trigger",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "commander-rescue"
+        ],
+        "summary": "Returns active commander rescue alerts visible to the authenticated user.",
+        "description": "**Required permission:** `commander_rescue:trigger`\n\nReturns active commander rescue alerts visible to the authenticated user.\n\nRequires permission: commander_rescue:trigger",
+        "operationId": "get_commander_rescue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "commander_rescue:trigger"
+      }
+    },
+    "/commander-rescue/acknowledge": {
+      "post": {
+        "tags": [
+          "commander-rescue"
+        ],
+        "summary": "Another commander acknowledges a rescue alert and dispatches a response team.",
+        "description": "**Required permission:** `commander_rescue:trigger`\n\nAnother commander acknowledges a rescue alert and dispatches a response team.\n\nRequires permission: commander_rescue:trigger (all commanders can acknowledge each other)",
+        "operationId": "post_commander_rescue_acknowledge",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "commander_rescue:trigger",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "alert_id": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commander-rescue/resolve": {
+      "post": {
+        "tags": [
+          "commander-rescue"
+        ],
+        "summary": "The commander who triggered the rescue (or a superior) marks themselves safe.",
+        "description": "**Required permission:** `commander_rescue:trigger`\n\nThe commander who triggered the rescue (or a superior) marks themselves safe.\n\nCloses the alert and stops tracking.\n\nRequires permission: commander_rescue:trigger",
+        "operationId": "post_commander_rescue_resolve",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "commander_rescue:trigger",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "alert_id": {
+                    "type": "string"
+                  },
+                  "tracking_session_id": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/corrections": {
+      "get": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "GET /corrections",
+        "description": "**Required permission:** `corrections:read`",
+        "operationId": "get_corrections",
+        "parameters": [
+          {
+            "name": "custody_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "facility_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "threat_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "corrections:read"
+      },
+      "post": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "POST /corrections",
+        "description": "**Required permission:** `corrections:write`",
+        "operationId": "post_corrections",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "corrections:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "suspect_id": {
+                    "type": "string"
+                  },
+                  "facility_name": {
+                    "type": "string"
+                  },
+                  "cell_block": {
+                    "type": "string"
+                  },
+                  "custody_status": {
+                    "type": "string"
+                  },
+                  "intake_date": {
+                    "type": "string"
+                  },
+                  "sentence_years": {
+                    "type": "string"
+                  },
+                  "court_name": {
+                    "type": "string"
+                  },
+                  "offense_description": {
+                    "type": "string"
+                  },
+                  "next_review": {
+                    "type": "string"
+                  },
+                  "threat_level": {
+                    "type": "string"
+                  },
+                  "mother_name": {
+                    "type": "string"
+                  },
+                  "sex": {
+                    "type": "string"
+                  },
+                  "place_of_birth": {
+                    "type": "string"
+                  },
+                  "residential_address": {
+                    "type": "string"
+                  },
+                  "domicile_address": {
+                    "type": "string"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "national_id": {
+                    "type": "string"
+                  },
+                  "marital_status": {
+                    "type": "string"
+                  },
+                  "profession": {
+                    "type": "string"
+                  },
+                  "properties_owned": {
+                    "type": "string"
+                  },
+                  "health_status": {
+                    "type": "string"
+                  },
+                  "education_level": {
+                    "type": "string"
+                  },
+                  "children_count": {
+                    "type": "string"
+                  },
+                  "alternative_contact": {
+                    "type": "string"
+                  },
+                  "party_status": {
+                    "type": "string"
+                  },
+                  "passport_photo_url": {
+                    "type": "string"
+                  },
+                  "verdict_date": {
+                    "type": "string"
+                  },
+                  "sentence_type": {
+                    "type": "string"
+                  },
+                  "court_conclusion": {
+                    "type": "string"
+                  },
+                  "residence": {
+                    "type": "string"
+                  },
+                  "domicile": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/corrections/{id}": {
+      "get": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "GET /corrections/{id}",
+        "description": "**Required permission:** `corrections:read`",
+        "operationId": "get_corrections__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "corrections:read"
+      },
+      "patch": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "PATCH /corrections/{id}",
+        "description": "**Required permission:** `corrections:write`",
+        "operationId": "patch_corrections__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "corrections:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "corrections"
+        ],
+        "summary": "DELETE /corrections/{id}",
+        "description": "**Required permission:** `corrections:write`",
+        "operationId": "delete_corrections__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "corrections:write"
+      }
+    },
+    "/dashboard/stats": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "GET /dashboard/stats",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_dashboard_stats",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      }
+    },
+    "/field-reports": {
+      "post": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "Automatically creates an intelligence_event + CRITICAL/HIGH alert so the",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nAutomatically creates an intelligence_event + CRITICAL/HIGH alert so the\n\nincident appears on the NISS Commander's real-time map.",
+        "operationId": "post_field_reports",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offline_id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "incident_date": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  },
+                  "media_urls": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "GET /field-reports",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_field_reports",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      }
+    },
+    "/field-reports/{id}": {
+      "get": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "GET /field-reports/{id}",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_field_reports__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      },
+      "patch": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "PATCH /field-reports/{id}",
+        "description": "**Required permission:** `field_reports:write`",
+        "operationId": "patch_field_reports__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "field_reports:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "DELETE /field-reports/{id}",
+        "description": "**Required permission:** `field_reports:write`",
+        "operationId": "delete_field_reports__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "field_reports:write"
+      }
+    },
+    "/field-reports/{id}/assign": {
+      "patch": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "Body: { assigned_to: ['NISS', 'RNP'], status?: 'ASSIGNED' }",
+        "description": "**Required permission:** `alerts:acknowledge`\n\nBody: { assigned_to: ['NISS', 'RNP'], status?: 'ASSIGNED' }",
+        "operationId": "patch_field_reports__id__assign",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:acknowledge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assigned_to": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/field-reports/upload": {
+      "post": {
+        "tags": [
+          "field-reports"
+        ],
+        "summary": "Accepts a single multipart/form-data file upload from the mobile agent.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nAccepts a single multipart/form-data file upload from the mobile agent.\n\nStores the file in the Supabase Storage \"field-media\" bucket under a\n\npath scoped to the authenticated agent, and returns the public URL.\n\nThe \"field-media\" bucket must be created in Supabase dashboard as PUBLIC\n\n(or with a signed-URL policy) before this endpoint will work.",
+        "operationId": "post_field_reports_upload",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/geo/route": {
+      "get": {
+        "tags": [
+          "geo"
+        ],
+        "summary": "GET /geo/route",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "get_geo_route",
+        "parameters": [
+          {
+            "name": "points",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/geo/search": {
+      "get": {
+        "tags": [
+          "geo"
+        ],
+        "summary": "GET /geo/search",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "get_geo_search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/infrastructure/cameras": {
+      "get": {
+        "tags": [
+          "infrastructure"
+        ],
+        "summary": "GET /infrastructure/cameras",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_infrastructure_cameras",
+        "parameters": [
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "is_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      },
+      "post": {
+        "tags": [
+          "infrastructure"
+        ],
+        "summary": "POST /infrastructure/cameras",
+        "description": "**Required permission:** `camera_nodes:manage`",
+        "operationId": "post_infrastructure_cameras",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "camera_nodes:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node_identifier": {
+                    "type": "string"
+                  },
+                  "location_name": {
+                    "type": "string"
+                  },
+                  "institution": {
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "type": "string"
+                  },
+                  "longitude": {
+                    "type": "string"
+                  },
+                  "firmware_version": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/infrastructure/cameras/{id}": {
+      "get": {
+        "tags": [
+          "infrastructure"
+        ],
+        "summary": "GET /infrastructure/cameras/{id}",
+        "description": "**Required permission:** `alerts:read`",
+        "operationId": "get_infrastructure_cameras__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "alerts:read"
+      },
+      "patch": {
+        "tags": [
+          "infrastructure"
+        ],
+        "summary": "Used by dashboard admins and edge Pi nodes (heartbeat updates)",
+        "description": "**Required permission:** `camera_nodes:manage`\n\nUsed by dashboard admins and edge Pi nodes (heartbeat updates)",
+        "operationId": "patch_infrastructure_cameras__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "camera_nodes:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "last_heartbeat": {
+                    "type": "string"
+                  },
+                  "is_active": {
+                    "type": "string"
+                  },
+                  "firmware_version": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "infrastructure"
+        ],
+        "summary": "DELETE /infrastructure/cameras/{id}",
+        "description": "**Required permission:** `camera_nodes:manage`",
+        "operationId": "delete_infrastructure_cameras__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "camera_nodes:manage"
+      }
+    },
+    "/intelligence/events": {
+      "get": {
+        "tags": [
+          "intelligence"
+        ],
+        "summary": "GET /intelligence/events",
+        "description": "**Required permission:** `source_attribution:read`",
+        "operationId": "get_intelligence_events",
+        "parameters": [
+          {
+            "name": "source_tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "criminal_record_found",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alert_generated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "has_location",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "officer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suspect_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "source_attribution:read"
+      },
+      "post": {
+        "tags": [
+          "intelligence"
+        ],
+        "summary": "POST /intelligence/events",
+        "description": "**Required permission:** `source_attribution:read`",
+        "operationId": "post_intelligence_events",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "source_attribution:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "source_tag": {
+                    "type": "string"
+                  },
+                  "suspect_id": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  },
+                  "criminal_record_found": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "string"
+                  },
+                  "camera_node_id": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "source_device_id": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intelligence/events/{id}": {
+      "get": {
+        "tags": [
+          "intelligence"
+        ],
+        "summary": "GET /intelligence/events/{id}",
+        "description": "**Required permission:** `source_attribution:read`",
+        "operationId": "get_intelligence_events__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "source_attribution:read"
+      },
+      "patch": {
+        "tags": [
+          "intelligence"
+        ],
+        "summary": "PATCH /intelligence/events/{id}",
+        "description": "**Required permission:** `source_attribution:read`",
+        "operationId": "patch_intelligence_events__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "source_attribution:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "intelligence"
+        ],
+        "summary": "DELETE /intelligence/events/{id}",
+        "description": "**Required permission:** `admin:write`",
+        "operationId": "delete_intelligence_events__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "admin:write"
+      }
+    },
+    "/location/recent": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Requires one of: location:read:all | location:read:limited | location:read:border",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nRequires one of: location:read:all | location:read:limited | location:read:border",
+        "operationId": "get_location_recent",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suspect_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/location/suspect/{id}": {
+      "get": {
+        "tags": [
+          "location"
+        ],
+        "summary": "Requires location:read:all or location:read:limited",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nRequires location:read:all or location:read:limited",
+        "operationId": "get_location_suspect__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          },
+          {
+            "name": "justification",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/openapi": {
+      "get": {
+        "tags": [
+          "openapi"
+        ],
+        "summary": "Serves the OpenAPI 3.0.3 spec generated from the route handlers by",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nServes the OpenAPI 3.0.3 spec generated from the route handlers by\n\nscripts/generate-openapi.js. Auth-gated: the spec exposes the full endpoint\n\nand permission map, which is RESTRICTED material.",
+        "operationId": "get_openapi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/partners": {
+      "get": {
+        "tags": [
+          "partners"
+        ],
+        "summary": "Requires international:manage or interpol:query",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nRequires international:manage or interpol:query",
+        "operationId": "get_partners",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/patrol/check": {
+      "post": {
+        "tags": [
+          "patrol"
+        ],
+        "summary": "Village Leader NID check — returns ONLY found/clean + criminal classification.",
+        "description": "**Required permission:** `nid:scan:result_only`\n\nVillage Leader NID check — returns ONLY found/clean + criminal classification.\n\nFull suspect identity is NEVER returned to village leaders.",
+        "operationId": "post_patrol_check",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "nid:scan:result_only",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nid": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patrol/officer-check": {
+      "post": {
+        "tags": [
+          "patrol"
+        ],
+        "summary": "Officer-grade NID scan: returns FULL suspect profile (name, IMS ref, status,",
+        "description": "**Required permission:** `nid:scan`\n\nOfficer-grade NID scan: returns FULL suspect profile (name, IMS ref, status,\n\nthreat level, owning institution). Creates intel event + CRITICAL alert.\n\nRequires nid:scan — available to RNP, RDF, NISS roles.",
+        "operationId": "post_patrol_officer_check",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "nid:scan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nid": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patrol/report": {
+      "get": {
+        "tags": [
+          "patrol"
+        ],
+        "summary": "Own activity feed for village leaders. GET /intelligence/events requires",
+        "description": "**Required permission:** `intel:report`\n\nOwn activity feed for village leaders. GET /intelligence/events requires\n\nsource_attribution:read which VILLAGE_LEADER deliberately lacks — this\n\nreturns only the caller's own events under their intel:report permission.",
+        "operationId": "get_patrol_report",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "intel:report"
+      },
+      "post": {
+        "tags": [
+          "patrol"
+        ],
+        "summary": "POST /patrol/report",
+        "description": "**Required permission:** `intel:report`",
+        "operationId": "post_patrol_report",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "intel:report",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "person_name": {
+                    "type": "string"
+                  },
+                  "person": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "insecurity_type": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  },
+                  "file_urls": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patrol/screen": {
+      "post": {
+        "tags": [
+          "patrol"
+        ],
+        "summary": "Village Leader community screening — checks a newcomer by full name or",
+        "description": "**Required permission:** `nid:scan:result_only`\n\nVillage Leader community screening — checks a newcomer by full name or\n\nNID/passport number and returns ONLY clean/record-found + classification.\n\nNo identity details are ever returned at this permission level.\n\nName lookups are case-insensitive EXACT matches (no partial search) so the\n\nregistry cannot be enumerated. A record match logs an NID_MANUAL sighting\n\nevent; WANTED / INTERPOL_FLAGGED matches raise a CRITICAL alert to RNP.",
+        "operationId": "post_patrol_screen",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "nid:scan:result_only",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "location_lat": {
+                    "type": "string"
+                  },
+                  "location_lng": {
+                    "type": "string"
+                  },
+                  "location_description": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/policies/accept": {
+      "post": {
+        "tags": [
+          "policies"
+        ],
+        "summary": "Accepts all currently pending (unaccepted) policy documents for the user.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nAccepts all currently pending (unaccepted) policy documents for the user.\n\nBody: { policy_ids: string[] }  — the IDs from the /pending response.",
+        "operationId": "post_policies_accept",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "policy_ids": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/policies/pending": {
+      "get": {
+        "tags": [
+          "policies"
+        ],
+        "summary": "Returns active policy documents that the authenticated user has NOT yet accepted.",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nReturns active policy documents that the authenticated user has NOT yet accepted.\n\nUsed by usePolicyGate to detect whether to redirect to /agree.",
+        "operationId": "get_policies_pending",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Global lookup across suspects and cases. Sections are permission-gated:",
+        "description": "**Authenticated** — any valid session, no specific permission.\n\nGlobal lookup across suspects and cases. Sections are permission-gated:\n\nsuspects require suspects:read, cases require cases:read (with the same\n\ninstitution scoping as GET /cases — NISS and RNP see all institutions).",
+        "operationId": "get_search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/siem/events": {
+      "get": {
+        "tags": [
+          "siem"
+        ],
+        "summary": "GET /siem/events",
+        "description": "**Required permission:** `siem:read`",
+        "operationId": "get_siem_events",
+        "parameters": [
+          {
+            "name": "reviewed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "siem:read"
+      },
+      "post": {
+        "tags": [
+          "siem"
+        ],
+        "summary": "Requires siem:manage (NISS / SIEM_ANALYST only)",
+        "description": "**Required permission:** `siem:manage`\n\nRequires siem:manage (NISS / SIEM_ANALYST only)",
+        "operationId": "post_siem_events",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "siem:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rule_name": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "auto_action": {
+                    "type": "string"
+                  },
+                  "actor_id": {
+                    "type": "string"
+                  },
+                  "actor_institution": {
+                    "type": "string"
+                  },
+                  "raw_data": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/siem/events/{id}/review": {
+      "patch": {
+        "tags": [
+          "siem"
+        ],
+        "summary": "PATCH /siem/events/{id}/review",
+        "description": "**Required permission:** `siem:manage`",
+        "operationId": "patch_siem_events__id__review",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "siem:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/suspects": {
+      "get": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "GET /suspects",
+        "description": "**Required permission:** `suspects:read`",
+        "operationId": "get_suspects",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clearance_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:read"
+      },
+      "post": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "POST /suspects",
+        "description": "**Required permission:** `suspects:write`",
+        "operationId": "post_suspects",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "first_name": {
+                    "type": "string"
+                  },
+                  "last_name": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "clearance_level": {
+                    "type": "string"
+                  },
+                  "date_of_birth": {
+                    "type": "string"
+                  },
+                  "nationality": {
+                    "type": "string"
+                  },
+                  "owning_institution": {
+                    "type": "string"
+                  },
+                  "threat_level": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "known_associates": {
+                    "type": "string"
+                  },
+                  "distinguishing_marks": {
+                    "type": "string"
+                  },
+                  "birthplace": {
+                    "type": "string"
+                  },
+                  "residence": {
+                    "type": "string"
+                  },
+                  "domicile": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/suspects/{id}": {
+      "get": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "GET /suspects/{id}",
+        "description": "**Required permission:** `suspects:read`",
+        "operationId": "get_suspects__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          },
+          {
+            "name": "justification",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:read"
+      },
+      "patch": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "PATCH /suspects/{id}",
+        "description": "**Required permission:** `suspects:write`",
+        "operationId": "patch_suspects__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "DELETE /suspects/{id}",
+        "description": "**Required permission:** `suspects:write`",
+        "operationId": "delete_suspects__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:write"
+      }
+    },
+    "/suspects/{id}/warrants": {
+      "get": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "GET /suspects/{id}/warrants",
+        "description": "**Required permission:** `suspects:read`",
+        "operationId": "get_suspects__id__warrants",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:read"
+      },
+      "post": {
+        "tags": [
+          "suspects"
+        ],
+        "summary": "POST /suspects/{id}/warrants",
+        "description": "**Required permission:** `suspects:write`",
+        "operationId": "post_suspects__id__warrants",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "warrant_type": {
+                    "type": "string"
+                  },
+                  "charges": {
+                    "type": "string"
+                  },
+                  "issued_by_court": {
+                    "type": "string"
+                  },
+                  "case_reference": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/team": {
+      "get": {
+        "tags": [
+          "team"
+        ],
+        "summary": "Active officers of the caller's institution with live case workload.",
+        "description": "**Required permission:** `cases:read`\n\nActive officers of the caller's institution with live case workload.\n\nNISS may pass ?institution=RIB to view another institution's roster.",
+        "operationId": "get_team",
+        "parameters": [
+          {
+            "name": "institution",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "cases:read"
+      }
+    },
+    "/warrants": {
+      "get": {
+        "tags": [
+          "warrants"
+        ],
+        "summary": "GET /warrants",
+        "description": "**Required permission:** `suspects:read`",
+        "operationId": "get_warrants",
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "suspect_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:read"
+      },
+      "post": {
+        "tags": [
+          "warrants"
+        ],
+        "summary": "POST /warrants",
+        "description": "**Required permission:** `suspects:write`",
+        "operationId": "post_warrants",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "x-required-permission": "suspects:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "suspect_id": {
+                    "type": "string"
+                  },
+                  "charges": {
+                    "type": "string"
+                  },
+                  "warrant_type": {
+                    "type": "string"
+                  },
+                  "issued_by_court": {
+                    "type": "string"
+                  },
+                  "case_reference": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/warrants/{id}": {
+      "get": {
+        "tags": [
+          "warrants"
+        ],
+        "summary": "GET /warrants/{id}",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "get_warrants__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "warrants"
+        ],
+        "summary": "PATCH /warrants/{id}",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "patch_warrants__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "warrants"
+        ],
+        "summary": "DELETE /warrants/{id}",
+        "description": "**Authenticated** — any valid session, no specific permission.",
+        "operationId": "delete_warrants__id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "id of the target record"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing, invalid or expired token",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated but lacking the required permission or clearance",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Unexpected server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}
