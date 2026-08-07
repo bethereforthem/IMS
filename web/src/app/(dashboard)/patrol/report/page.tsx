@@ -8,6 +8,14 @@ import {
   User, AlertTriangle, Link2,
 } from 'lucide-react'
 import clsx from 'clsx'
+import LocationSelector from '@/components/shared/LocationSelector'
+import {
+  EMPTY_RW_LOCATION, formatRwLocation, rwLocationFromFields,
+  RW_FIELDS_BIRTHPLACE as POB_FIELDS,
+  RW_FIELDS_DOMICILE as DOM_FIELDS,
+  RW_FIELDS_RESIDENTIAL as RES_FIELDS,
+  type RwLevel, type RwLocation,
+} from '@/lib/rw-locations'
 
 const INSECURITY_TYPES = [
   { value: 'THEFT',               label: 'Theft / Robbery' },
@@ -32,9 +40,13 @@ const PROFILE_FIELDS: {
   key: string
   label: string
   required?: boolean
-  type?: 'date' | 'select' | 'number' | 'textarea'
+  type?: 'date' | 'select' | 'number' | 'textarea' | 'location'
   options?: string[]
   placeholder?: string
+  /** For type 'location': which profile keys the selector reads/writes. */
+  locationFields?: Partial<Record<RwLevel, string>>
+  /** For type 'location': deepest level to collect. Default 'village'. */
+  depth?: RwLevel
 }[] = [
   { key: 'full_name',               label: 'Full Name', required: true, placeholder: 'Names as on the National ID' },
   { key: 'party_status',            label: 'Party Status', placeholder: 'e.g. Member of political party X / None' },
@@ -42,9 +54,9 @@ const PROFILE_FIELDS: {
   { key: 'mother_name',             label: "Mother's Name" },
   { key: 'date_of_birth',           label: 'Date of Birth', type: 'date' },
   { key: 'sex',                     label: 'Sex', type: 'select', options: SEX_OPTIONS },
-  { key: 'place_of_birth',          label: 'Place of Birth', placeholder: 'District / Sector / Cell / Village' },
-  { key: 'residential_address',     label: 'Residential Address', placeholder: 'Where the person currently lives' },
-  { key: 'domicile_address',        label: 'Domicile Address', placeholder: 'Permanent / family home address' },
+  { key: 'place_of_birth',          label: 'Place of Birth', type: 'location', locationFields: POB_FIELDS },
+  { key: 'residential_address',     label: 'Residential Address', type: 'location', locationFields: RES_FIELDS },
+  { key: 'domicile_address',        label: 'Domicile Address', type: 'location', locationFields: DOM_FIELDS },
   { key: 'telephone',               label: 'Telephone Number', placeholder: '07XX XXX XXX' },
   { key: 'email',                   label: 'Email', placeholder: 'example@mail.com' },
   { key: 'national_id_or_passport', label: 'National ID / Passport Number', placeholder: '16-digit NID or passport number' },
@@ -58,7 +70,15 @@ const PROFILE_FIELDS: {
   { key: 'alternative_contact',     label: 'Alternative Contact Information', placeholder: 'Next of kin / relative name and phone' },
 ]
 
-const EMPTY_PROFILE = Object.fromEntries(PROFILE_FIELDS.map(f => [f.key, ''])) as Record<string, string>
+// A 'location' field owns five keys rather than one, so expand it here — the
+// composed single-string form is derived at submit time.
+const EMPTY_PROFILE = Object.fromEntries(
+  PROFILE_FIELDS.flatMap(f =>
+    f.type === 'location'
+      ? Object.values(f.locationFields ?? {}).map(k => [k, ''])
+      : [[f.key, '']],
+  ),
+) as Record<string, string>
 
 interface StagedFile {
   file: File
@@ -74,6 +94,7 @@ export default function PatrolReportPage() {
 
   const [profile, setProfile]                 = useState<Record<string, string>>({ ...EMPTY_PROFILE })
   const [insecurityType, setInsecurityType]   = useState('')
+  const [incidentLocation, setIncidentLocation] = useState<RwLocation>(EMPTY_RW_LOCATION)
   const [locationDesc, setLocationDesc]       = useState('')
   const [description, setDescription]         = useState('')
   const [stagedFiles, setStagedFiles]         = useState<StagedFile[]>([])
@@ -155,6 +176,17 @@ export default function PatrolReportPage() {
       Object.entries(profile).map(([k, v]) => [k, v.trim()])
     ) as Record<string, string>
 
+    // Send the structured chain (already in trimmedProfile as …_province etc.)
+    // alongside the single-string form each address field is consumed as. The
+    // string always carries the whole chain, never just the village.
+    for (const f of PROFILE_FIELDS) {
+      if (f.type !== 'location' || !f.locationFields) continue
+      trimmedProfile[f.key] = formatRwLocation(
+        rwLocationFromFields(trimmedProfile, f.locationFields),
+        f.depth ?? 'village',
+      )
+    }
+
     try {
       const res = await patrolApi.submitReport({
         person_name: trimmedProfile.full_name,
@@ -163,7 +195,12 @@ export default function PatrolReportPage() {
         insecurity_type: insecurityType,
         location_lat: coords?.lat ?? null,
         location_lng: coords?.lng ?? null,
-        location_description: locationDesc.trim() || undefined,
+        // Structured chain for querying, plus the human-readable form the
+        // existing consumers already render.
+        location: incidentLocation,
+        location_description:
+          [locationDesc.trim(), formatRwLocation(incidentLocation)]
+            .filter(Boolean).join(' — ') || undefined,
         file_urls: fileUrls,
       })
       setMatchedRecord(!!res.data?.matched_existing_record)
@@ -206,7 +243,7 @@ export default function PatrolReportPage() {
               setSuccess(false)
               setMatchedRecord(false)
               setProfile({ ...EMPTY_PROFILE })
-              setInsecurityType(''); setLocationDesc('')
+              setInsecurityType(''); setLocationDesc(''); setIncidentLocation(EMPTY_RW_LOCATION)
               setDescription(''); setStagedFiles([])
             }}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm rounded-lg transition-colors"
@@ -258,7 +295,19 @@ export default function PatrolReportPage() {
                     ? <span className="text-red-400"> *</span>
                     : <span className="text-slate-600"> (if known)</span>}
                 </label>
-                {f.type === 'select' ? (
+                {f.type === 'location' ? (
+                  <LocationSelector
+                    idPrefix={`patrol-${f.key}`}
+                    depth={f.depth ?? 'village'}
+                    value={rwLocationFromFields(profile, f.locationFields)}
+                    fieldNames={f.locationFields}
+                    onChange={(_next, patch) => setProfile(prev => ({ ...prev, ...patch }))}
+                    classNames={{
+                      label: 'block text-[11px] font-medium text-slate-400 mb-1 uppercase tracking-wide',
+                      select: inputCls,
+                    }}
+                  />
+                ) : f.type === 'select' ? (
                   <select
                     value={profile[f.key]}
                     onChange={e => setField(f.key, e.target.value)}
@@ -339,14 +388,33 @@ export default function PatrolReportPage() {
             <MapPin className="h-4 w-4 text-blue-400" />
             <h2 className="text-sm font-bold text-white uppercase tracking-wide">Location</h2>
           </div>
+          <div className="space-y-3">
+            <p className="block text-xs font-semibold text-slate-400 uppercase tracking-wide">
+              Where This Happens
+            </p>
+            <LocationSelector
+              idPrefix="patrol-incident"
+              value={incidentLocation}
+              onChange={next => setIncidentLocation(next)}
+              classNames={{
+                label: 'block text-[11px] font-medium text-slate-400 mb-1 uppercase tracking-wide',
+                select: inputCls,
+              }}
+            />
+          </div>
+
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">
-              Location Description
+            <label
+              htmlFor="patrol-location-desc"
+              className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide"
+            >
+              Nearest Landmark <span className="text-slate-600 normal-case font-normal">(optional)</span>
             </label>
             <input
+              id="patrol-location-desc"
               value={locationDesc}
               onChange={e => setLocationDesc(e.target.value)}
-              placeholder="e.g. Near Kimironko market, Sector X, Cell Y"
+              placeholder="e.g. Near Kimironko market, behind the health post"
               className={inputCls}
             />
             {gpsReady && (
