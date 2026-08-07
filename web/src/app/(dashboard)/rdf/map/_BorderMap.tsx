@@ -7,6 +7,7 @@ import type { CameraNode, IntelligenceEvent } from '@/types'
 import { alarmManager, type MapSoundType } from '@/lib/mapSounds'
 import { alertSignalIconHtml, alertSignalPopupHtml, alertEventSoundType, alertEventSeverity } from '@/lib/mapAlertUtils'
 import { attachMapNavigation, type MapNavHandle } from '@/lib/mapNav'
+import { createBaseLayers } from '@/lib/mapBaseLayers'
 
 type LayerGroup = { clearLayers: () => void; addTo: (m: unknown) => unknown }
 
@@ -133,18 +134,9 @@ export default function BorderMap({ cameras, events, alertEvents = [], showCamer
       const map = L.map(divRef.current, { center: [-1.9403, 29.8739], zoom: 8, zoomSnap: 0.5, zoomDelta: 0.5, wheelPxPerZoomLevel: 100 })
       mapRef.current = map
 
-      // Satellite imagery with roads, landmarks and place names is the default view
-      const hybridLayer = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 })
-      const baseLayers: Record<string, L.TileLayer> = {
-        '🛰️ Satellite + Labels': hybridLayer,
-        '🛰️ Satellite':          L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { subdomains: ['0','1','2','3'], attribution: '&copy; Google', maxZoom: 20, maxNativeZoom: 20 }),
-        '🗺️ Streets (English)':  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '🌑 Dark (Tactical)':    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '☀️ Light':              L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO', maxZoom: 20 }),
-        '🗺️ Streets (OSM)':      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }),
-        '⛰️ Terrain':           L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenTopoMap', maxZoom: 17 }),
-      }
-      hybridLayer.addTo(map)
+      // Shared across every dashboard map — see lib/mapBaseLayers.ts.
+      const { layers: baseLayers, initialLayer } = createBaseLayers(L)
+      initialLayer.addTo(map)
 
       const cameraLayer = L.layerGroup(); if (showCameras)    cameraLayer.addTo(map)
       const detectLayer = L.layerGroup(); if (showDetections) detectLayer.addTo(map)
