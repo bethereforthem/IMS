@@ -57,7 +57,7 @@ export default function NISSSuspectsPage() {
 
   useEffect(() => {
     suspectsApi.list({ limit: 200 }).then((r) => {
-      if (r.data?.suspects?.length) setSuspects(r.data.suspects)
+      if (Array.isArray(r.data?.suspects)) setSuspects(r.data.suspects)
     }).catch(() => {})
   }, [])
 
@@ -179,7 +179,7 @@ export default function NISSSuspectsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <ThreatDots level={s.threat_level} />
+                    <ThreatDots level={s.threat_level ?? 0} />
                   </td>
                   <td className="px-4 py-3 text-slate-400">{s.institution_classification}</td>
                   <td className="px-4 py-3">
