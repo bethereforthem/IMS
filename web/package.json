@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000 --hostname 0.0.0.0",
+    "docs": "node scripts/generate-openapi.js",
+    "locations": "node scripts/generate-locations.js",
+    "prebuild": "node scripts/generate-openapi.js && node scripts/generate-locations.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -27,6 +30,7 @@
     "react-hot-toast": "^2.4.1",
     "react-leaflet": "^4.2.1",
     "recharts": "^2.13.0",
+    "swagger-ui-react": "^5.32.12",
     "tesseract.js": "^7.0.0",
     "typescript": "^5.5.3"
   },
