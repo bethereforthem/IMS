@@ -13,7 +13,7 @@ import {
 } from 'recharts'
 import {
   Users, AlertTriangle, Shield, Radio, FileText,
-  Activity, Globe, Lock, CheckCircle, Clock, XCircle, Plus,
+  Activity, Lock, CheckCircle, Clock, XCircle, Plus,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import clsx from 'clsx'
@@ -50,11 +50,14 @@ export default function NISSCommandCenter() {
       siemApi.getEvents(6),
       partnersApi.list(),
     ]).then(([s, e, se, p]) => {
+      // Accept empty results as the real answer — the dashboard reloads after
+      // every write, and skipping empty responses would keep showing records
+      // the database no longer has.
       if (s.data) setStats(s.data)
-      if (e.data?.length) setEvents(e.data)
-      if (se.data?.length) setSiem(se.data)
+      if (Array.isArray(e.data)) setEvents(e.data)
+      if (Array.isArray(se.data)) setSiem(se.data)
       const pData = (p.data as { partners?: Record<string, unknown>[] })?.partners
-      if (pData?.length) setPartners(pData)
+      if (Array.isArray(pData)) setPartners(pData)
     }).catch(console.error)
       .finally(() => setLoading(false))
   }, [])
@@ -214,23 +217,39 @@ export default function NISSCommandCenter() {
             <p className="text-sm text-slate-500 py-4 text-center">No partner records found</p>
           ) : (
             <div className="space-y-3">
-              {partners.map((p, i) => (
-                <div key={i}
-                  className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white">{String(p.country_name ?? p.country ?? '—')}</p>
-                    <p className="text-xs text-slate-500">MOU expires {String(p.mou_expires ?? '—')}</p>
+              {partners.map((p, i) => {
+                // Status comes from the real `revoked` / `active` columns —
+                // international_partners has no `status` column, so the old
+                // `p.status ?? 'ACTIVE'` painted every row green regardless.
+                const revoked = Boolean(p.revoked)
+                const active = Boolean(p.active) && !revoked
+                const queries = p.recent_queries
+                return (
+                  <div key={String(p.id ?? i)}
+                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-800/40 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">
+                        {String(p.country_name ?? '—')}
+                        {p.country_code ? (
+                          <span className="ml-1.5 text-[11px] font-mono text-slate-500">{String(p.country_code)}</span>
+                        ) : null}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {p.mou_includes_identity ? 'MOU covers identity data' : 'MOU excludes identity data'}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={clsx('text-xs font-bold',
+                        revoked ? 'text-red-400' : active ? 'text-green-400' : 'text-slate-500')}>
+                        {revoked ? 'REVOKED' : active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                      <p className="text-[11px] text-slate-500">
+                        {typeof queries === 'number' ? `${queries} queries · 30d` : 'queries unavailable'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-bold text-green-400">{String(p.status ?? 'ACTIVE')}</span>
-                    <p className="text-[11px] text-slate-500">{String(p.recent_queries ?? 0)} queries</p>
-                  </div>
-                </div>
-              ))}
-              <div className="rounded-lg border border-blue-900 bg-blue-950/20 px-4 py-2.5 text-xs text-blue-400">
-                <Globe className="inline h-3 w-3 mr-1" />
-                Interpol I-24/7 feed active
-              </div>
+                )
+              })}
             </div>
           )}
         </div>
