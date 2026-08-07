@@ -46,7 +46,13 @@ const TYPE_SHORT: Record<string, string> = {
 
 export default function AdminOverviewPage() {
   const [sessions,  setSessions]  = useState<AdminSession[]>([])
+  // The session list is capped at 20 for display; this is the real total.
+  const [sessionTotal, setSessionTotal] = useState(0)
   const [incidents, setIncidents] = useState<SecurityIncident[]>([])
+  const [incidentTotal, setIncidentTotal] = useState(0)
+  // Whether the last IDS poll actually succeeded — the footer used to claim
+  // "IDS: ACTIVE" in green even when this endpoint was failing.
+  const [idsReachable, setIdsReachable] = useState<boolean | null>(null)
   const [analytics, setAnalytics] = useState<{
     summary: { total_active_users: number; total_logins_24h: number; failed_logins_24h: number; unresolved_incidents: number }
   } | null>(null)
@@ -83,17 +89,34 @@ export default function AdminOverviewPage() {
   }, [showAlert, muted])
 
   const load = useCallback(() => {
-    Promise.all([
+    // allSettled, not all: one failing panel must not blank the other three,
+    // and the footer needs to know which subsystem actually answered.
+    Promise.allSettled([
       adminPortalApi.getSessions({ limit: 20 }),
       adminPortalApi.getIncidents(false, 20),
       adminPortalApi.getAnalytics(),
       adminPortalApi.getHealth(),
     ]).then(([s, i, a, h]) => {
-      setSessions(s.data?.sessions ?? [])
-      setIncidents(i.data?.incidents ?? [])
-      setAnalytics(a.data ?? null)
-      setHealth(h.data ? { status: h.data.status, db_latency_ms: h.data.db_latency_ms, db_healthy: h.data.db_healthy } : null)
-    }).catch(console.error).finally(() => setLoading(false))
+      if (s.status === 'fulfilled') {
+        setSessions(s.value.data?.sessions ?? [])
+        setSessionTotal(s.value.data?.count ?? s.value.data?.sessions?.length ?? 0)
+      }
+      if (i.status === 'fulfilled') {
+        setIncidents(i.value.data?.incidents ?? [])
+        setIncidentTotal(i.value.data?.count ?? i.value.data?.incidents?.length ?? 0)
+        setIdsReachable(true)
+      } else {
+        console.error('[admin overview] IDS incidents unavailable', i.reason)
+        setIdsReachable(false)
+      }
+      if (a.status === 'fulfilled') setAnalytics(a.value.data ?? null)
+      if (h.status === 'fulfilled') {
+        const d = h.value.data
+        setHealth(d ? { status: d.status, db_latency_ms: d.db_latency_ms, db_healthy: d.db_healthy } : null)
+      } else {
+        setHealth(null)
+      }
+    }).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
@@ -217,8 +240,13 @@ export default function AdminOverviewPage() {
             <Monitor style={{ width: 16, height: 16, color: '#3b82f6' }} />
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Active Sessions</span>
             <span style={{ marginLeft: 'auto', background: '#1e3a5f', color: '#93c5fd', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '12px' }}>
-              {sessions.length}
+              {sessionTotal}
             </span>
+            {sessionTotal > sessions.length && (
+              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                showing {sessions.length}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '320px', overflowY: 'auto' }}>
             {sessions.length === 0 && (
@@ -260,8 +288,13 @@ export default function AdminOverviewPage() {
             <ShieldAlert style={{ width: 16, height: 16, color: '#ef4444' }} />
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Recent IDS Incidents</span>
             <span style={{ marginLeft: 'auto', background: '#450a0a', color: '#fca5a5', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '12px' }}>
-              {incidents.length}
+              {incidentTotal}
             </span>
+            {incidentTotal > incidents.length && (
+              <span style={{ fontSize: '10px', color: '#64748b' }}>
+                showing {incidents.length}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '320px', overflowY: 'auto' }}>
             {incidents.length === 0 && (
@@ -322,7 +355,13 @@ export default function AdminOverviewPage() {
             </span>
           </span>
           <span style={{ fontSize: '11px', color: '#64748b' }}>
-            IDS: <span style={{ color: '#22c55e', fontWeight: 700 }}>ACTIVE</span>
+            IDS:{' '}
+            <span style={{
+              color: idsReachable === null ? '#f59e0b' : idsReachable ? '#22c55e' : '#ef4444',
+              fontWeight: 700,
+            }}>
+              {idsReachable === null ? 'CHECKING…' : idsReachable ? 'ACTIVE' : 'UNREACHABLE'}
+            </span>
           </span>
           <span style={{ fontSize: '11px', color: '#64748b' }}>Auto-refresh every 30s</span>
         </div>
