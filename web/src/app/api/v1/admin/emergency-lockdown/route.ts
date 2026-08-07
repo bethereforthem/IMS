@@ -2,9 +2,41 @@ import { NextRequest } from 'next/server'
 import { withAuth, apiSuccess, apiError } from '@/lib/api-middleware'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { logAudit } from '@/lib/audit'
+import { invalidateSessionCache } from '@/lib/access-enforcement'
 import type { AuthPayload } from '@/lib/rbac'
 
 const PROTECTED_ROLES = ['NISS_DIRECTOR', 'NISS_OFFICER', 'SIEM_ANALYST']
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/admin/emergency-lockdown
+// Directors eligible to co-sign a lockdown: active NISS_DIRECTORs other than
+// the caller. Lets the console offer a picker instead of asking an operator to
+// paste a raw UUID during an emergency.
+// Requires emergency_lockdown permission (NISS_DIRECTOR only)
+// ---------------------------------------------------------------------------
+export const GET = withAuth(async (_req: NextRequest, { user }: { user: AuthPayload }) => {
+  try {
+    const supabase = createServerSupabaseClient()
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, badge_number, last_login_at')
+      .eq('role', 'NISS_DIRECTOR')
+      .eq('active', true)
+      .neq('id', user.user_id)
+      .order('full_name', { ascending: true })
+
+    if (error) {
+      console.error('[emergency-lockdown GET] co-signer lookup error', error)
+      return apiError('Failed to load eligible directors', 500)
+    }
+
+    return apiSuccess({ directors: data ?? [], total: data?.length ?? 0 })
+  } catch (err) {
+    console.error('[emergency-lockdown GET]', err)
+    return apiError('Internal server error', 500)
+  }
+}, 'emergency_lockdown')
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/admin/emergency-lockdown
@@ -37,17 +69,43 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       return apiError('Second director not found or does not have NISS_DIRECTOR role', 403)
     }
 
-    // Revoke all sessions for non-NISS/SIEM roles
-    const { error: revokeError } = await supabase
+    // Revoke all sessions for non-NISS/SIEM roles.
+    //
+    // This used to pass a raw `SELECT` into PostgREST's `in` filter, which
+    // takes a literal value list — so the filter never matched as intended and
+    // the lockdown's central action did nothing. Resolve the protected users
+    // first, then exclude them by id.
+    const { data: protectedUsers, error: protectedError } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', PROTECTED_ROLES)
+
+    let sessionsRevoked = 0
+
+    if (protectedError) {
+      console.error('[emergency-lockdown] protected-user lookup failed', protectedError)
+      return apiError('Could not determine protected accounts — lockdown aborted', 500)
+    }
+
+    const protectedIds = (protectedUsers ?? []).map(u => u.id)
+
+    let revokeQuery = supabase
       .from('user_sessions')
       .update({ revoked: true, revoked_at: new Date().toISOString() })
-      .not('user_id', 'in', `(
-        SELECT id FROM users WHERE role = ANY(ARRAY['${PROTECTED_ROLES.join("','")}'])
-      )`)
+      .eq('revoked', false)
+
+    if (protectedIds.length > 0) {
+      revokeQuery = revokeQuery.not('user_id', 'in', `(${protectedIds.join(',')})`)
+    }
+
+    const { data: revokedSessions, error: revokeError } = await revokeQuery.select('id')
 
     if (revokeError) {
       console.error('[emergency-lockdown] session revoke error', revokeError)
-      // Non-fatal — continue to log and alert
+      // Non-fatal — continue to log and alert, but do not claim a false count.
+    } else {
+      sessionsRevoked = revokedSessions?.length ?? 0
+      for (const s of revokedSessions ?? []) invalidateSessionCache(s.id)
     }
 
     // Create SIEM event
@@ -100,7 +158,10 @@ export const POST = withAuth(async (req: NextRequest, { user }: { user: AuthPayl
       },
     })
 
-    return apiSuccess({ message: 'Emergency lockdown activated. All non-NISS sessions revoked.' })
+    return apiSuccess({
+      message: `Emergency lockdown activated. ${sessionsRevoked} session${sessionsRevoked === 1 ? '' : 's'} revoked.`,
+      sessions_revoked: sessionsRevoked,
+    })
   } catch (err) {
     console.error('[emergency-lockdown POST]', err)
     return apiError('Internal server error', 500)
