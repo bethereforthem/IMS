@@ -56,6 +56,7 @@ const INSTITUTIONS = ['', 'NISS', 'RNP', 'RIB', 'RDF', 'RCS', 'SYSTEM']
 export default function AdminAuditPage() {
   const [entries,    setEntries]    = useState<AuditEntry[]>([])
   const [total,      setTotal]      = useState(0)
+  const [loadError,  setLoadError]  = useState<string | null>(null)
   const [page,       setPage]       = useState(1)
   const [loading,    setLoading]    = useState(false)
   const [expanded,   setExpanded]   = useState<number | null>(null)
@@ -89,7 +90,16 @@ export default function AdminAuditPage() {
       setEntries(res.data.entries as unknown as AuditEntry[])
       setTotal(res.data.total)
       setPage(pg)
-    } catch { /* silent */ }
+      setLoadError(null)
+    } catch (e: unknown) {
+      // A failed load used to leave the previous page's rows on screen with no
+      // indication they were stale — on an audit log that is misleading.
+      console.error(e)
+      const detail = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setEntries([])
+      setTotal(0)
+      setLoadError(detail ?? 'Could not load the audit log.')
+    }
     finally { setLoading(false) }
   }, [action, targetType, institution, from, to, search])
 
@@ -110,6 +120,9 @@ export default function AdminAuditPage() {
       const res = await fetch(`/api/v1/audit?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
+      // Without this the JSON error body is saved as a .csv and looks like a
+      // successful export of an empty log.
+      if (!res.ok) throw new Error(`Export failed (${res.status})`)
       const blob = await res.blob()
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
@@ -117,7 +130,11 @@ export default function AdminAuditPage() {
       a.download = `audit_log_${new Date().toISOString().split('T')[0]}.csv`
       a.click()
       URL.revokeObjectURL(url)
-    } catch { /* silent */ }
+      setLoadError(null)
+    } catch (e: unknown) {
+      console.error(e)
+      setLoadError('Audit export failed. No file was downloaded.')
+    }
     finally { setExporting(false) }
   }
 
@@ -174,6 +191,16 @@ export default function AdminAuditPage() {
             <button onClick={() => { setAction(''); setTargetType(''); setInstitution(''); setFrom(''); setTo(''); setSearch('') }}
               style={BTN_GHOST}>Clear</button>
           </div>
+        </div>
+      )}
+
+      {loadError && (
+        <div role="alert" style={{
+          background: '#450a0a', border: '1px solid #ef4444', borderRadius: '8px',
+          padding: '10px 14px', marginBottom: '14px',
+          color: '#fca5a5', fontSize: '12px', fontWeight: 600,
+        }}>
+          {loadError}
         </div>
       )}
 
